@@ -633,5 +633,5 @@ const TabButton = ({ active, onClick, icon, label }: any) => (
 );
 
 export default TeacherDashboard;
-]]></content>
-</change>
+
+
