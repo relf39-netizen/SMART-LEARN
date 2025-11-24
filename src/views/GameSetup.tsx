@@ -58,27 +58,37 @@ const GameSetup: React.FC<GameSetupProps> = ({ onBack, onGameCreated }) => {
         return;
     }
 
-    // ✅ แก้ไข Error: แปลงค่า undefined ให้เป็นค่าว่างก่อนส่งไป Firebase
-    const sanitizedQuestions = finalQuestions.map(q => ({
-        id: q.id || '',
-        subject: q.subject || '',
-        text: q.text || '',
-        image: q.image || '',
-        choices: q.choices.map(c => ({
-            id: c.id || '',
+    // ✅ CLEAN DATA: ตรวจสอบความถูกต้องของ ID ก่อนส่งขึ้น Firebase
+    const sanitizedQuestions = finalQuestions.map(q => {
+        // ตรวจสอบว่า choices มี id หรือไม่ ถ้าไม่มีให้สร้างใหม่
+        const newChoices = q.choices.map((c, idx) => ({
+            id: c.id ? String(c.id) : String(idx + 1), // ถ้าไม่มี ID ให้ใช้ลำดับ 1,2,3,4
             text: c.text || '',
             image: c.image || ''
-        })),
-        correctChoiceId: q.correctChoiceId || '',
-        explanation: q.explanation || '',
-        grade: q.grade || 'ALL',
-        school: q.school || 'CENTER' // ป้องกัน school เป็น undefined
-    }));
+        }));
+
+        return {
+            id: String(q.id),
+            subject: q.subject || '',
+            text: q.text || '',
+            image: q.image || '',
+            choices: newChoices,
+            // แปลงเฉลยเป็น String เสมอ เพื่อลดปัญหา Type Mismatch
+            correctChoiceId: String(q.correctChoiceId), 
+            explanation: q.explanation || '',
+            grade: q.grade || 'ALL',
+            school: q.school || 'CENTER'
+        };
+    });
 
     try {
+        // Reset Scores
         await db.ref('game/scores').set({});
-        await db.ref('questions').set(sanitizedQuestions); // ส่งตัวที่แก้แล้วไป
         
+        // Upload Questions
+        await db.ref('questions').set(sanitizedQuestions);
+        
+        // Set Game State
         await db.ref('gameState').set({
             status: 'LOBBY',
             currentQuestionIndex: 0,
@@ -111,7 +121,7 @@ const GameSetup: React.FC<GameSetupProps> = ({ onBack, onGameCreated }) => {
             </h2>
         </div>
 
-        {/* 0. เลือกระดับชั้น (ภาษาไทย) */}
+        {/* 0. เลือกระดับชั้น */}
         <div className="mb-6">
             <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><GraduationCap size={18}/> 0. เลือกระดับชั้น</label>
             <div className="grid grid-cols-3 gap-2">
