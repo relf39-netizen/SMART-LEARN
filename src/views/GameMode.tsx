@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Student, Question } from '../types';
-import { Users, Trophy, Play, CheckCircle, Volume2, VolumeX, Crown, Music, Zap, AlertTriangle } from 'lucide-react';
+import { Users, Trophy, Play, CheckCircle, Volume2, VolumeX, Crown, Zap, AlertTriangle } from 'lucide-react';
 import { speak, playBGM, stopBGM, playSFX, toggleMuteSystem } from '../utils/soundUtils';
 import { db, firebase } from '../services/firebaseConfig';
 
@@ -93,15 +93,20 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
 
     const playersRef = db.ref('game/players');
     playersRef.on('value', (snap: any) => { 
-        if(snap.val()) {
-            const allPlayers = Object.values(snap.val());
-            setPlayers(allPlayers.filter((p:any) => p.name !== undefined));
+        // แก้ไข: รับค่า null (เมื่อล้างห้อง) ได้ถูกต้อง
+        const val = snap.val();
+        if(val) {
+            const allPlayers = Object.values(val);
+            // กรองครูออกตรงนี้เลย
+            setPlayers(allPlayers.filter((p:any) => p.name !== undefined && String(p.id) !== '99999'));
+        } else {
+            setPlayers([]);
         }
     });
     
     const scoresRef = db.ref('game/scores');
     scoresRef.on('value', (snap: any) => { 
-        // รับค่าคะแนนและอัปเดตทันที (ใส่ {} กัน error)
+        // แก้ไข: รับค่า null ได้ถูกต้อง (รีเซ็ตคะแนน)
         setScores(snap.val() || {}); 
     });
 
@@ -193,7 +198,7 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
     const points = isCorrect ? (50 + timeBonus) : 0;
     
     if (points > 0) {
-       // ✅ ใช้ Transaction: บวกคะแนนที่เซิร์ฟเวอร์โดยตรง (แก้ปัญหาคะแนนไม่ขึ้น)
+       // Transaction เพื่อความแม่นยำและแก้ปัญหาคะแนนเป็น 0
        db.ref(`game/scores/${student.id}`).transaction((currentScore) => {
          return (currentScore || 0) + points;
        });
@@ -203,15 +208,13 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
     }
   };
 
-  // ✅ Leaderboard: เรียงคะแนนมาก->น้อย (Real-time)
+  // Leaderboard Logic
   const sortedPlayers = players
     .filter(p => p.online && String(p.id) !== '99999')
     .sort((a, b) => (scores[b.id] || 0) - (scores[a.id] || 0));
     
   const myRank = sortedPlayers.findIndex(p => p.id === student.id) + 1;
   const currentQuestion = questions[currentQuestionIndex];
-
-  // --- RENDER ---
 
   if (status === 'WAITING') {
       return (
@@ -280,7 +283,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
     const timePercent = (timer / maxTime) * 100;
     const timerColor = timePercent > 50 ? 'bg-green-500' : timePercent > 20 ? 'bg-yellow-500' : 'bg-red-600';
     
-    // --- 👨‍🏫 หน้าจอครู (Admin View) - เห็นแต่ Leaderboard ---
     if (isAdmin) {
         return (
             <div className="max-w-4xl mx-auto pt-4 pb-20 relative">
@@ -318,7 +320,6 @@ const GameMode: React.FC<GameModeProps> = ({ student, onExit }) => {
         );
     }
 
-    // --- 👨‍🎓 หน้าจอนักเรียน (Student View) ---
     return (
       <div className="max-w-4xl mx-auto pt-4 pb-20 relative">
         <button onClick={toggleSound} className={`fixed top-20 right-4 z-50 p-2 rounded-full shadow-lg ${isMuted ? 'bg-gray-200 text-gray-500' : 'bg-green-500 text-white animate-pulse'}`}>{isMuted ? <VolumeX size={24}/> : <Volume2 size={24}/>}</button>
