@@ -196,21 +196,58 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         return;
     }
 
-    // 🟢 2. กรณีเพิ่มข้อมูลใหม่ (ใช้ระบบดั้งเดิม = รวดเร็ว + โชว์บัตร)
+    // 🟢 2. กรณีเพิ่มข้อมูลใหม่
     setIsSaving(true); 
     try {
-        const result = await addStudent(newStudentName, teacher.school, newStudentAvatar, newStudentGrade);
+        const res = await manageStudent({ 
+            action: 'add', 
+            name: newStudentName, 
+            school: teacher.school, 
+            avatar: newStudentAvatar, 
+            grade: newStudentGrade 
+        });
         
-        if (result) {
-            setCreatedStudent(result); // ✅ โชว์บัตรนักเรียนทันที
-            setStudents(prev => [...prev, result]); 
+        if (res.success && res.student) {
+            // กรณีปกติ: API ตอบกลับมาถูกต้อง
+            setCreatedStudent(res.student);
+            setStudents(prev => [...prev, res.student!]); 
             setNewStudentName('');
-            // ไม่ต้อง Alert เพราะมีบัตรโชว์ให้เห็นแล้ว
         } else {
-            alert('เกิดข้อผิดพลาดในการบันทึก');
+            // 🔥 Fail-safe: API อาจจะตอบ Error (Connection Error) แต่จริงๆ ข้อมูลลง Sheet แล้ว
+            // เราจะลองตรวจสอบรายชื่อใหม่ดู (Verification)
+            
+            const foundAdded = await verifyDataChange((list) => {
+                // เช็คว่ามีนักเรียนชื่อนี้ เกรดนี้ เข้ามาใหม่หรือไม่
+                return list.some(s => s.name === newStudentName && s.avatar === newStudentAvatar && s.grade === newStudentGrade);
+            });
+
+            if (foundAdded && foundAdded.length > 0) {
+                // เย้! ข้อมูลเข้าจริง แม้ API จะ Error
+                const addedStudent = foundAdded.find(s => s.name === newStudentName);
+                if (addedStudent) {
+                    setCreatedStudent(addedStudent);
+                    setStudents(foundAdded); // อัปเดตลิสต์ล่าสุด
+                    setNewStudentName('');
+                    // ถือว่าสำเร็จ ไม่ต้อง Alert Error
+                } else {
+                     alert('บันทึกไม่สำเร็จ: ' + (res.message || 'ไม่ทราบสาเหตุ'));
+                }
+            } else {
+                // ไม่เจอจริงๆ แสดงว่าล้มเหลว
+                alert('บันทึกไม่สำเร็จ: ' + (res.message || 'โปรดตรวจสอบการเชื่อมต่อ Google Script'));
+            }
         }
     } catch(e) {
-        alert('เชื่อมต่อไม่สำเร็จ: ' + e);
+        // กรณี Network Error จริงๆ ก็ลองเช็คอีกสักรอบ
+        const foundAdded = await verifyDataChange((list) => list.some(s => s.name === newStudentName));
+        if (foundAdded) {
+             const addedStudent = foundAdded.find(s => s.name === newStudentName);
+             setCreatedStudent(addedStudent!);
+             setStudents(foundAdded);
+             setNewStudentName('');
+        } else {
+             alert('เชื่อมต่อไม่สำเร็จ: ' + e);
+        }
     } finally {
         setIsSaving(false);
     }

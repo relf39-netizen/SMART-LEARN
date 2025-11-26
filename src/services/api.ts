@@ -132,7 +132,7 @@ export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', i
 };
 
 // ✅ Add New Student (Legacy Wrapper)
-export const addStudent = async (name: string, school: string, avatar: string, grade: string): Promise<Student | null> => {
+export const addStudent = async (name: string, school: string, avatar: string, grade: string = 'P6'): Promise<Student | null> => {
   const result = await manageStudent({ action: 'add', name, school, avatar, grade });
   if (result.success && result.student) {
       return result.student;
