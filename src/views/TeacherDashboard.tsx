@@ -90,6 +90,14 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     setLoading(false);
   };
 
+  // ✅ Helper Function: แปลงวันที่เป็นไทย
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
   // --- Helper: Verify Data Change (Polling Loop) ---
   const verifyDataChange = async (checkFn: (students: Student[]) => boolean) => {
       // ลองเช็ค 5 ครั้ง (ประมาณ 8-10 วินาที)
@@ -647,7 +655,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                              <td className="p-3 font-bold text-gray-900">{a.subject}</td>
                                              <td className="p-3 text-center text-gray-900">{a.questionCount}</td>
                                              <td className={`p-3 font-medium ${isExpired ? 'text-red-600' : 'text-gray-900'}`}>
-                                                 {a.deadline} {isExpired && '(หมดเขต)'}
+                                                 {formatDate(a.deadline)} {isExpired && '(หมดเขต)'}
                                              </td>
                                              <td className="p-3 text-center">
                                                  <span className={`px-2 py-1 rounded-full font-bold text-xs ${submittedCount > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
@@ -866,7 +874,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                   </div>
                   <div className="p-4 bg-blue-50 border-b">
                       <div className="font-bold text-blue-900 text-lg">{selectedAssignment.subject} ({selectedAssignment.questionCount} ข้อ)</div>
-                      <div className="text-sm text-blue-700 mt-1">กำหนดส่ง: <b>{selectedAssignment.deadline}</b></div>
+                      <div className="text-sm text-blue-700 mt-1">กำหนดส่ง: <b>{formatDate(selectedAssignment.deadline)}</b></div>
                   </div>
                   <div className="overflow-y-auto p-4 flex-1 bg-gray-50">
                       {students.length === 0 ? <div className="text-center py-10 text-gray-400">ไม่มีนักเรียนในโรงเรียนนี้</div> : (

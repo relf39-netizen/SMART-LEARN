@@ -29,6 +29,13 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
       return (resultB?.timestamp || 0) - (resultA?.timestamp || 0);
   });
 
+  // ✅ Helper Function: แปลงวันที่เป็นไทย
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
   // --- ส่วนแสดงผลหน้ารายละเอียดประวัติ ---
   if (view === 'history') {
     return (
@@ -59,7 +66,7 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                         <span className="text-xs text-gray-400">{new Date(result?.timestamp || 0).toLocaleString('th-TH')}</span>
                      </div>
                      <div className="font-bold text-gray-800 text-lg">การบ้าน {hw.questionCount} ข้อ</div>
-                     <div className="text-sm text-gray-500">กำหนดส่งเดิม: {hw.deadline}</div>
+                     <div className="text-sm text-gray-500">กำหนดส่งเดิม: {formatDate(hw.deadline)}</div>
                    </div>
                    
                    <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end bg-gray-50 p-3 rounded-xl sm:bg-transparent sm:p-0">
@@ -121,7 +128,7 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                                   {isExpired && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200">เลยกำหนด</span>}
                                 </div>
                                 <div className={`text-sm ${isExpired ? 'text-red-500 font-medium' : 'text-gray-600'}`}>
-                                  จำนวน {hw.questionCount} ข้อ • ส่งภายใน {hw.deadline}
+                                  จำนวน {hw.questionCount} ข้อ • ส่งภายใน {formatDate(hw.deadline)}
                                 </div>
                             </div>
                             <button 
@@ -179,4 +186,3 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
 };
 
 export default Dashboard;
-    
