@@ -9,14 +9,23 @@ export interface GeneratedQuestion {
   c4: string;
   correct: string;
   explanation: string;
+  image?: string; // ✅ เพิ่ม URL รูปภาพ
 }
+
+// ฟังก์ชันสร้าง URL รูปภาพจาก Pollinations.ai
+const generateImageUrl = (description: string): string => {
+  if (!description || description.trim().length === 0 || description.toLowerCase() === 'none') return '';
+  // เพิ่ม Prompt ให้ภาพออกมาน่ารักเหมาะกับเด็ก
+  const encodedPrompt = encodeURIComponent(description + " cartoon style, for kids, educational, white background, simple, clear, high quality");
+  return `https://image.pollinations.ai/prompt/${encodedPrompt}?nologo=true`;
+};
 
 export const generateQuestionWithAI = async (
   subject: string,
   grade: string,
   topic: string,
   apiKey: string,
-  count: number = 1 // ✅ รับจำนวนข้อ (Default 1)
+  count: number = 1 
 ): Promise<GeneratedQuestion[] | null> => {
   try {
     if (!apiKey) {
@@ -37,6 +46,7 @@ export const generateQuestionWithAI = async (
       - Each object must have 4 choices (c1, c2, c3, c4).
       - Indicate the correct choice number (1, 2, 3, or 4).
       - Provide a short explanation for the correct answer.
+      - If the question is about a visual object (e.g., shapes, animals, fruits) or would benefit from an illustration, provide a concise English description in the 'image_description' field. If no image is needed (e.g., math calculation, grammar), leave it empty or string "none".
     `;
 
     const response = await ai.models.generateContent({
@@ -45,7 +55,7 @@ export const generateQuestionWithAI = async (
       config: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.ARRAY, // ✅ เปลี่ยนเป็น Array
+          type: Type.ARRAY, 
           items: {
             type: Type.OBJECT,
             properties: {
@@ -56,6 +66,7 @@ export const generateQuestionWithAI = async (
               c4: { type: Type.STRING, description: "Choice 4" },
               correct: { type: Type.STRING, description: "The correct choice number '1', '2', '3', or '4'" },
               explanation: { type: Type.STRING, description: "Explanation of the answer" },
+              image_description: { type: Type.STRING, description: "Visual description in English for image generation (or 'none')" }
             },
             required: ["text", "c1", "c2", "c3", "c4", "correct", "explanation"],
           },
@@ -65,8 +76,19 @@ export const generateQuestionWithAI = async (
 
     if (response.text) {
       const data = JSON.parse(response.text);
-      // Ensure we return an array even if single object returned (rare case safety)
-      return Array.isArray(data) ? data : [data];
+      const rawArray = Array.isArray(data) ? data : [data];
+      
+      // Map and Generate Image URL
+      return rawArray.map((item: any) => ({
+        text: item.text,
+        c1: item.c1,
+        c2: item.c2,
+        c3: item.c3,
+        c4: item.c4,
+        correct: item.correct,
+        explanation: item.explanation,
+        image: item.image_description ? generateImageUrl(item.image_description) : ''
+      }));
     }
     
     return null;

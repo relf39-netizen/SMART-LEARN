@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { Teacher, Student, Subject, Assignment, Question } from '../types';
-import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, Users, GraduationCap, Trash2, Edit, Shield, UserCog, KeyRound, Sparkles, Wand2, Key, HelpCircle, ChevronDown, ChevronUp, AlertTriangle, Layers } from 'lucide-react';
-import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, manageTeacher, getAllTeachers, GOOGLE_SCRIPT_URL, deleteQuestion, deleteAssignment } from '../services/api';
+import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, Users, GraduationCap, Trash2, Edit, Shield, UserCog, KeyRound, Sparkles, Wand2, Key, HelpCircle, ChevronDown, ChevronUp, AlertTriangle, Layers, Clock } from 'lucide-react';
+import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, editQuestion, manageTeacher, getAllTeachers, GOOGLE_SCRIPT_URL, deleteQuestion, deleteAssignment } from '../services/api';
 import { generateQuestionWithAI } from '../services/aiService';
 
 interface TeacherDashboardProps {
@@ -53,6 +52,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [assignDeadline, setAssignDeadline] = useState('');
 
   // Question Form
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null); // ✅ New state for editing question
   const [qSubject, setQSubject] = useState<Subject>(Subject.MATH);
   const [qGrade, setQGrade] = useState('P6');
   const [qText, setQText] = useState('');
@@ -428,7 +428,38 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       }
   };
   
-  const handleAddQuestion = async () => {
+  // ✅ Fill Form for Editing
+  const handleEditQuestion = (q: Question) => {
+      setEditingQuestionId(q.id);
+      setQSubject(q.subject);
+      setQGrade(q.grade || 'P6');
+      setQText(q.text);
+      setQImage(q.image || '');
+      setQCorrect(String(q.correctChoiceId));
+      setQExplain(q.explanation);
+      
+      const choices = { c1: '', c2: '', c3: '', c4: '' };
+      q.choices.forEach((c, idx) => {
+          if (idx === 0) choices.c1 = c.text;
+          if (idx === 1) choices.c2 = c.text;
+          if (idx === 2) choices.c3 = c.text;
+          if (idx === 3) choices.c4 = c.text;
+      });
+      setQChoices(choices);
+      
+      // Scroll to form
+      document.getElementById('question-form')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleCancelQuestionEdit = () => {
+      setEditingQuestionId(null);
+      setQText(''); 
+      setQChoices({c1:'', c2:'', c3:'', c4:''}); 
+      setQExplain('');
+      setQImage('');
+  };
+
+  const handleSaveQuestion = async () => {
     if (!qText || !qChoices.c1 || !qChoices.c2) return alert('กรุณากรอกข้อมูลให้ครบถ้วน');
     
     // Check Teacher ID robustly
@@ -438,9 +469,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     }
 
     setIsProcessing(true);
-    setProcessingMessage('กำลังบันทึกข้อสอบ...');
+    setProcessingMessage(editingQuestionId ? 'กำลังบันทึกการแก้ไข...' : 'กำลังบันทึกข้อสอบ...');
     
-    const success = await addQuestion({ 
+    const questionPayload = { 
+        id: editingQuestionId, // Send ID if editing
         subject: qSubject, 
         grade: qGrade, 
         text: qText, 
@@ -450,16 +482,24 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         explanation: qExplain, 
         school: teacher.school,
         teacherId: tid
-    });
+    };
+
+    let success = false;
+    if (editingQuestionId) {
+        success = await editQuestion(questionPayload);
+    } else {
+        success = await addQuestion(questionPayload);
+    }
+
+    setIsProcessing(false);
 
     if (success) { 
-        alert('✅ บันทึกข้อสอบเรียบร้อยแล้ว'); 
-        setQText(''); setQChoices({c1:'', c2:'', c3:'', c4:''}); setQExplain(''); 
+        alert(editingQuestionId ? '✅ แก้ไขข้อสอบสำเร็จ' : '✅ บันทึกข้อสอบเรียบร้อยแล้ว'); 
+        handleCancelQuestionEdit(); // Reset form
         await loadData(); 
     } else { 
-        alert('บันทึกไม่สำเร็จ'); 
+        alert('บันทึกไม่สำเร็จ (ตรวจสอบว่าได้อัปเดต Google Apps Script ให้รองรับฟังก์ชัน edit_question หรือยัง)'); 
     }
-    setIsProcessing(false);
   };
 
   const handleDeleteQuestion = async (id: string) => {
@@ -496,6 +536,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 setQChoices({ c1: result.c1, c2: result.c2, c3: result.c3, c4: result.c4 });
                 setQCorrect(result.correct);
                 setQExplain(result.explanation);
+                setQImage(result.image || ''); // ✅ ใส่ URL รูปภาพลงฟอร์ม
                 
                 alert("✨ สร้างโจทย์สำเร็จ! \n\nข้อมูลได้ถูกกรอกลงในแบบฟอร์มแล้ว \nท่านสามารถแก้ไข/ปรับปรุงโจทย์ได้ตามต้องการ ก่อนกด 'บันทึกข้อสอบ' ครับ");
             } else {
@@ -517,7 +558,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                         subject: qSubject,
                         grade: qGrade,
                         text: q.text,
-                        image: '',
+                        image: q.image || '', // ✅ บันทึกรูปภาพ (ถ้ามี)
                         c1: q.c1, c2: q.c2, c3: q.c3, c4: q.c4,
                         correct: q.correct,
                         explanation: q.explanation,
@@ -898,8 +939,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                                     <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-lg">{s.avatar}</div>
                                                     <div className="flex-1 min-w-0">
                                                         <p className="text-sm font-bold text-gray-800 truncate">{s.name}</p>
-                                                        <div className="flex gap-1 items-center mt-1">
-                                                            <span className="text-sm font-medium text-gray-600 bg-gray-50 px-2 py-0.5 rounded border">ID: {s.id}</span>
+                                                        <div className="flex gap-1">
+                                                            <span className="text-sm text-gray-400 bg-gray-50 px-1 py-0.5 rounded border">ID: {s.id}</span>
                                                             {s.teacherId && <span className="text-[10px] text-gray-400 bg-gray-50 px-1 py-0.5 rounded border">T: {String(s.teacherId).slice(-4)}</span>}
                                                         </div>
                                                     </div>
@@ -946,29 +987,29 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
               <div className="max-w-4xl mx-auto">
                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 mb-8">
                     <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Calendar className="text-orange-500"/> สั่งงานใหม่</h4>
-                    <div className="grid md:grid-cols-5 gap-4">
-                        <div className="col-span-1">
-                            <label className="text-xs font-bold text-gray-500 block mb-1">ระดับชั้น</label>
-                            <select value={assignGrade} onChange={(e) => setAssignGrade(e.target.value)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none">
-                                <option value="ALL">ทุกระดับชั้น</option>
-                                {GRADES.map(g => <option key={g} value={g}>{GRADE_LABELS[g]}</option>)}
-                            </select>
-                        </div>
-                        <div className="col-span-1">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        <div>
                             <label className="text-xs font-bold text-gray-500 block mb-1">วิชา</label>
                             <select value={assignSubject} onChange={(e) => setAssignSubject(e.target.value as Subject)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none">
                                 {Object.values(Subject).map((s) => <option key={s} value={s}>{s}</option>)}
                             </select>
                         </div>
-                        <div className="col-span-1">
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 block mb-1">ระดับชั้น</label>
+                            <select value={assignGrade} onChange={(e) => setAssignGrade(e.target.value)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none">
+                                <option value="ALL">ทุกชั้น</option>
+                                {GRADES.map(g => <option key={g} value={g}>{GRADE_LABELS[g]}</option>)}
+                            </select>
+                        </div>
+                        <div>
                             <label className="text-xs font-bold text-gray-500 block mb-1">จำนวนข้อ</label>
                             <input type="number" value={assignCount} onChange={(e) => setAssignCount(Number(e.target.value))} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none" min="5" max="50" />
                         </div>
-                        <div className="col-span-1">
+                        <div>
                             <label className="text-xs font-bold text-gray-500 block mb-1">ส่งภายใน</label>
                             <input type="date" value={assignDeadline} onChange={(e) => setAssignDeadline(e.target.value)} className="w-full p-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-orange-200 outline-none" />
                         </div>
-                        <div className="flex items-end col-span-1">
+                        <div className="flex items-end md:col-span-1 col-span-2">
                             <button onClick={handleCreateAssignment} disabled={isProcessing} className="w-full bg-orange-500 text-white py-2 rounded-lg font-bold shadow hover:bg-orange-600 disabled:opacity-50 flex items-center justify-center gap-2 h-[42px]">
                                 {isProcessing ? 'กำลังบันทึก...' : <><Save size={16}/> สั่งงาน</>}
                             </button>
@@ -986,22 +1027,20 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                      <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-gray-200">
                          <table className="w-full text-sm text-left">
                              <thead className="bg-orange-50 text-orange-900">
-                                 <tr><th className="p-3">ชั้น</th><th className="p-3">วิชา</th><th className="p-3 text-center">จำนวนข้อ</th><th className="p-3">กำหนดส่ง</th><th className="p-3 text-center">คนส่งแล้ว</th><th className="p-3 text-right">จัดการ</th></tr>
+                                 <tr><th className="p-3">วิชา</th><th className="p-3">ชั้น</th><th className="p-3 text-center">จำนวนข้อ</th><th className="p-3">กำหนดส่ง</th><th className="p-3 text-center">คนส่งแล้ว</th><th className="p-3 text-right">จัดการ</th></tr>
                              </thead>
                              <tbody>
                                  {assignments.slice().reverse().map((a) => {
                                      const submittedCount = countSubmitted(a.id);
                                      const isExpired = new Date(a.deadline) < new Date();
                                      
-                                     // Relaxed owner check
-                                     const isOwner = isAdmin || (a.createdBy && a.createdBy.trim() === teacher.name.trim());
+                                     // ✅ Fix Owner Check
+                                     const isOwner = isAdmin || (a.createdBy === teacher.name);
 
                                      return (
                                          <tr key={a.id} className="border-b hover:bg-gray-50 last:border-0">
-                                             <td className="p-3 font-medium text-gray-600">
-                                                {a.grade === 'ALL' || !a.grade ? <span className="bg-gray-200 px-2 py-0.5 rounded text-[10px] text-gray-600">ทุกชั้น</span> : <span className="bg-purple-100 px-2 py-0.5 rounded text-[10px] text-purple-700 font-bold">{GRADE_LABELS[a.grade] || a.grade}</span>}
-                                             </td>
                                              <td className="p-3 font-bold text-gray-900">{a.subject}</td>
+                                             <td className="p-3 text-gray-600">{a.grade === 'ALL' ? 'ทุกชั้น' : GRADE_LABELS[a.grade || ''] || a.grade}</td>
                                              <td className="p-3 text-center text-gray-900">{a.questionCount}</td>
                                              <td className={`p-3 font-medium ${isExpired ? 'text-red-600' : 'text-gray-900'}`}>
                                                  {formatDate(a.deadline)} {isExpired && '(หมดเขต)'}
@@ -1013,7 +1052,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                              </td>
                                              <td className="p-3 text-right flex justify-end gap-2">
                                                  <button onClick={() => setSelectedAssignment(a)} className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 border border-blue-200">
-                                                     <Eye size={14} /> ดูรายละเอียด
+                                                     <Eye size={14} /> ดู
                                                  </button>
                                                  {isOwner && (
                                                      <button 
@@ -1096,18 +1135,23 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                          </a>
                       </div>
                   </div>
-                  {/* Form เพิ่มข้อสอบ */}
-                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-8">
+                  
+                  {/* Form เพิ่ม/แก้ไขข้อสอบ */}
+                  <div id="question-form" className={`bg-white p-6 rounded-2xl shadow-sm border mb-8 transition-colors ${editingQuestionId ? 'border-orange-200 bg-orange-50' : 'border-gray-200'}`}>
                       <div className="flex justify-between items-center mb-4">
-                        <h4 className="font-bold text-gray-800 flex items-center gap-2">➕ เพิ่มข้อสอบใหม่ด่วน</h4>
+                        <h4 className="font-bold text-gray-800 flex items-center gap-2">
+                            {editingQuestionId ? <><Edit className="text-orange-500"/> แก้ไขข้อสอบ</> : <><PlusCircle className="text-blue-500"/> เพิ่มข้อสอบใหม่</>}
+                        </h4>
                         
                         {/* ✨✨ AI BUTTON ✨✨ */}
-                        <button 
-                            onClick={() => setShowAiModal(true)}
-                            className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md hover:scale-105 transition flex items-center gap-2"
-                        >
-                            <Sparkles size={14} className="text-yellow-300"/> ให้ AI ช่วยออกข้อสอบ
-                        </button>
+                        {!editingQuestionId && (
+                            <button 
+                                onClick={() => setShowAiModal(true)}
+                                className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md hover:scale-105 transition flex items-center gap-2"
+                            >
+                                <Sparkles size={14} className="text-yellow-300"/> ให้ AI ช่วยออกข้อสอบ
+                            </button>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-2 gap-4 mb-4">
@@ -1148,12 +1192,18 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                          <label className="block text-xs font-bold text-gray-500 mb-1">อธิบายเฉลย</label>
                          <textarea value={qExplain} onChange={(e)=>setQExplain(e.target.value)} className="w-full p-2 border rounded-lg bg-white text-gray-900" rows={1} placeholder="อธิบายเหตุผล..."></textarea>
                       </div>
-                      <button onClick={handleAddQuestion} disabled={isProcessing} className="w-full bg-blue-600 text-white py-2 rounded-xl font-bold shadow hover:bg-blue-700 flex items-center justify-center gap-2">
-                         {isProcessing ? 'กำลังบันทึก...' : <><PlusCircle size={20}/> บันทึกข้อสอบ</>}
-                      </button>
+                      
+                      <div className="flex gap-2">
+                          {editingQuestionId && (
+                              <button onClick={handleCancelQuestionEdit} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-300">ยกเลิก</button>
+                          )}
+                          <button onClick={handleSaveQuestion} disabled={isProcessing} className={`flex-1 py-2 rounded-xl font-bold shadow text-white flex items-center justify-center gap-2 ${editingQuestionId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                             {isProcessing ? 'กำลังบันทึก...' : (editingQuestionId ? <><Save size={20}/> บันทึกการแก้ไข</> : <><PlusCircle size={20}/> บันทึกข้อสอบ</>)}
+                          </button>
+                      </div>
                   </div>
     
-                  {/* 1. ปุ่มเลือกวิชา (Filter) - Hide if "Show My Questions" is active */}
+                  {/* 1. ปุ่มเลือกวิชา (Filter) */}
                   {!showMyQuestionsOnly && (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                          {[
@@ -1200,7 +1250,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                                      (!q.teacherId && q.school === teacher.school && q.school !== 'CENTER' && q.school !== 'Admin');
 
                                       return (
-                                      <div key={q.id} className={`p-5 hover:bg-blue-50 transition ${isMine ? 'bg-purple-50/50' : ''}`}>
+                                      <div key={q.id} className={`p-5 hover:bg-blue-50 transition ${isMine ? 'bg-purple-50/50' : ''} ${editingQuestionId === q.id ? 'ring-2 ring-orange-400 bg-orange-50' : ''}`}>
                                           <div className="flex justify-between items-start mb-3">
                                               <div className="flex gap-2">
                                                   <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded">ข้อ {((qBankPage-1)*ITEMS_PER_PAGE) + idx + 1}</span>
@@ -1214,15 +1264,25 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                               </div>
                                               <div className="flex items-center gap-2">
                                                   <span className="text-xs text-gray-300 font-mono">ID: {q.id}</span>
-                                                  {/* ✅ ปุ่มลบ (แสดงเฉพาะข้อสอบที่ฉันสร้าง หรือ Admin) */}
+                                                  
+                                                  {/* ✅ ปุ่มแก้ไขและลบ (แสดงเฉพาะข้อสอบที่ฉันสร้าง หรือ Admin) */}
                                                   {isMine && (
-                                                      <button 
-                                                          onClick={() => handleDeleteQuestion(q.id)}
-                                                          className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1 rounded transition"
-                                                          title="ลบข้อสอบ"
-                                                      >
-                                                          <Trash2 size={16} />
-                                                      </button>
+                                                      <>
+                                                          <button 
+                                                              onClick={() => handleEditQuestion(q)}
+                                                              className="text-blue-500 hover:text-blue-700 hover:bg-blue-100 p-1.5 rounded transition"
+                                                              title="แก้ไขข้อสอบ"
+                                                          >
+                                                              <Edit size={16} />
+                                                          </button>
+                                                          <button 
+                                                              onClick={() => handleDeleteQuestion(q.id)}
+                                                              className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition"
+                                                              title="ลบข้อสอบ"
+                                                          >
+                                                              <Trash2 size={16} />
+                                                          </button>
+                                                      </>
                                                   )}
                                               </div>
                                           </div>
@@ -1276,6 +1336,126 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             )}
         </div>
       )}
+
+      {/* ✅ MODAL: View Progress (Improved) */}
+      {selectedAssignment && (
+          <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col animate-fade-in border border-gray-200">
+                  <div className="p-5 border-b flex justify-between items-center bg-gray-50">
+                      <div>
+                          <h3 className="font-bold text-xl text-gray-800 flex items-center gap-2"><Calendar size={22} className="text-blue-600"/> ติดตามการส่งงาน</h3>
+                          <p className="text-xs text-gray-500 mt-1">รายการนักเรียนที่ได้รับมอบหมาย</p>
+                      </div>
+                      <button onClick={() => setSelectedAssignment(null)} className="bg-white p-2 rounded-full border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-200 transition shadow-sm"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="p-5 bg-blue-50/50 border-b border-blue-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+                      <div>
+                          <div className="flex items-center gap-2 mb-1">
+                              <span className="bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded">{selectedAssignment.subject}</span>
+                              <span className="bg-purple-100 text-purple-700 text-xs font-bold px-2 py-0.5 rounded border border-purple-200">
+                                {selectedAssignment.grade === 'ALL' ? 'ทุกระดับชั้น' : GRADE_LABELS[selectedAssignment.grade || ''] || selectedAssignment.grade}
+                              </span>
+                          </div>
+                          <div className="font-bold text-blue-900 text-lg">จำนวน {selectedAssignment.questionCount} ข้อ</div>
+                      </div>
+                      <div className="text-right">
+                          <div className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-1">กำหนดส่ง</div>
+                          <div className="text-red-600 font-bold bg-white px-3 py-1 rounded-lg border border-red-100 shadow-sm inline-block">
+                              {formatDate(selectedAssignment.deadline)}
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="overflow-y-auto p-0 flex-1 bg-white">
+                      {(() => {
+                          // 1. Filter students by Grade
+                          let targetStudents = students;
+                          if (selectedAssignment.grade && selectedAssignment.grade !== 'ALL') {
+                              targetStudents = students.filter(s => s.grade === selectedAssignment.grade);
+                          }
+
+                          if (targetStudents.length === 0) {
+                              return (
+                                  <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+                                      <Users size={48} className="mb-2 opacity-20"/>
+                                      <p>ไม่มีนักเรียนในระดับชั้นนี้</p>
+                                  </div>
+                              );
+                          }
+
+                          // 2. Map status and sort
+                          const studentStatus = targetStudents.map(s => {
+                              const result = stats.filter(r => r.assignmentId === selectedAssignment.id && String(r.studentId) === String(s.id)).pop();
+                              return { student: s, result };
+                          });
+
+                          // Sort: Submitted first, then by Name
+                          studentStatus.sort((a, b) => {
+                              if (a.result && !b.result) return -1;
+                              if (!a.result && b.result) return 1;
+                              return a.student.name.localeCompare(b.student.name);
+                          });
+
+                          const submittedCount = studentStatus.filter(i => i.result).length;
+
+                          return (
+                              <div>
+                                  <div className="bg-gray-100 px-5 py-2 text-xs font-bold text-gray-500 flex justify-between">
+                                      <span>รายชื่อ ({targetStudents.length})</span>
+                                      <span className={submittedCount === targetStudents.length ? "text-green-600" : "text-blue-600"}>
+                                          ส่งแล้ว {submittedCount}/{targetStudents.length} คน
+                                      </span>
+                                  </div>
+                                  <table className="w-full text-sm text-left">
+                                      <tbody className="divide-y divide-gray-100">
+                                          {studentStatus.map(({ student, result }) => (
+                                              <tr key={student.id} className={`hover:bg-gray-50 transition-colors ${result ? 'bg-green-50/30' : ''}`}>
+                                                  <td className="p-4">
+                                                      <div className="flex items-center gap-3">
+                                                          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-lg border border-gray-200 shadow-sm">
+                                                              {student.avatar}
+                                                          </div>
+                                                          <div>
+                                                              <div className="font-bold text-gray-800">{student.name}</div>
+                                                              <div className="text-xs text-gray-400 font-mono">ID: {student.id}</div>
+                                                          </div>
+                                                      </div>
+                                                  </td>
+                                                  <td className="p-4 text-center">
+                                                      {result ? (
+                                                          <span className="inline-flex items-center gap-1 text-green-700 bg-green-100 px-2 py-1 rounded-md text-xs font-bold border border-green-200">
+                                                              <CheckCircle size={12}/> ส่งแล้ว
+                                                          </span>
+                                                      ) : (
+                                                          <span className="inline-flex items-center gap-1 text-gray-400 bg-gray-100 px-2 py-1 rounded-md text-xs font-bold border border-gray-200">
+                                                              <Clock size={12}/> ยังไม่ส่ง
+                                                          </span>
+                                                      )}
+                                                  </td>
+                                                  <td className="p-4 text-right">
+                                                      {result ? (
+                                                          <div>
+                                                              <span className="text-lg font-black text-blue-600">{result.score}</span>
+                                                              <span className="text-gray-400 text-xs">/{result.totalQuestions}</span>
+                                                          </div>
+                                                      ) : <span className="text-gray-300">-</span>}
+                                                  </td>
+                                                  <td className="p-4 text-right text-xs text-gray-500">
+                                                      {result ? new Date(result.timestamp).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-'}
+                                                  </td>
+                                              </tr>
+                                          ))}
+                                      </tbody>
+                                  </table>
+                              </div>
+                          );
+                      })()}
+                  </div>
+              </div>
+          </div>
+      )}
+
     </div>
   );
 };
