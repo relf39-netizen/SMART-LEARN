@@ -1,8 +1,8 @@
 
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { ArrowLeft, Trophy, AlertCircle, CheckCircle2, Activity } from 'lucide-react';
-import { ExamResult, Subject } from '../types';
+import { ArrowLeft, Trophy, AlertCircle, Activity } from 'lucide-react';
+import { ExamResult } from '../types';
 
 interface StatsProps {
   examResults: ExamResult[];
@@ -18,8 +18,10 @@ const Stats: React.FC<StatsProps> = ({ examResults, studentId, onBack }) => {
     const myResults = examResults.filter(r => r.studentId === studentId);
 
     // 2. เตรียมข้อมูลแยกรายวิชา
-    const subjects = Object.values(Subject);
-    const data = subjects.map(subject => {
+    // ดึงรายวิชาทั้งหมดที่นักเรียนเคยสอบ
+    const uniqueSubjects = Array.from(new Set(myResults.map(r => r.subject)));
+    
+    const data = uniqueSubjects.map(subject => {
         const subjectResults = myResults.filter(r => r.subject === subject);
         const totalAttempts = subjectResults.length;
         
@@ -46,14 +48,16 @@ const Stats: React.FC<StatsProps> = ({ examResults, studentId, onBack }) => {
     return { chartData: data, totalExams: myResults.length, bestSubject, weakSubject };
   }, [examResults, studentId]);
 
-  function getSubjectColor(subject: Subject) {
-      switch (subject) {
-          case Subject.MATH: return '#ef4444'; // Red
-          case Subject.THAI: return '#eab308'; // Yellow
-          case Subject.SCIENCE: return '#22c55e'; // Green
-          case Subject.ENGLISH: return '#3b82f6'; // Blue
-          default: return '#6b7280';
-      }
+  function getSubjectColor(subject: string) {
+      const s = String(subject).toLowerCase();
+      if (s.includes('คณิต') || s.includes('math')) return '#ef4444'; // Red
+      if (s.includes('ไทย') || s.includes('thai')) return '#eab308'; // Yellow
+      if (s.includes('วิทย์') || s.includes('science')) return '#22c55e'; // Green
+      if (s.includes('อังกฤษ') || s.includes('english')) return '#3b82f6'; // Blue
+      if (s.includes('สังคม') || s.includes('social')) return '#f97316'; // Orange
+      if (s.includes('ศิลปะ') || s.includes('art')) return '#ec4899'; // Pink
+      if (s.includes('คอม') || s.includes('computer')) return '#8b5cf6'; // Purple
+      return '#6b7280'; // Gray default
   }
 
   return (

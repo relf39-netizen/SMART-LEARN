@@ -1,8 +1,9 @@
 
 // services/api.ts
 
-import { Student, Question, Teacher, Subject, ExamResult, Assignment } from '../types'; 
+import { Student, Question, Teacher, Subject, ExamResult, Assignment, SubjectConfig } from '../types'; 
 import { MOCK_STUDENTS, MOCK_QUESTIONS } from '../constants';
+import { db } from './firebaseConfig'; // Import Firebase DB
 
 // ---------------------------------------------------------------------------
 // 🟢 Web App URL
@@ -16,32 +17,62 @@ export interface AppData {
   assignments: Assignment[];
 }
 
-// 🔄 Helper: Add Timestamp to prevent caching
 const getUrl = (params: string) => {
   const separator = params.includes('?') ? '&' : '?';
   return `${GOOGLE_SCRIPT_URL}${params}${separator}_t=${Date.now()}`;
 };
 
-// 🔄 Helper: Normalize Subject
+// ✅ Removed strict normalization to allow dynamic subjects
 const normalizeSubject = (rawSubject: string): Subject => {
-  const s = String(rawSubject).trim().toUpperCase();
-  if (s === 'MATH' || s === 'คณิตศาสตร์' || s === 'คณิต') return Subject.MATH;
-  if (s === 'THAI' || s === 'ภาษาไทย' || s === 'ไทย') return Subject.THAI;
-  if (s === 'SCIENCE' || s === 'วิทยาศาสตร์' || s === 'วิทย์') return Subject.SCIENCE;
-  if (s === 'ENGLISH' || s === 'ภาษาอังกฤษ' || s === 'อังกฤษ') return Subject.ENGLISH;
-  return Subject.MATH; 
+  return String(rawSubject).trim();
 };
 
-// 🔄 Helper: Convert Subject to Code
-const convertToCode = (subjectEnum: Subject): string => {
-    if (subjectEnum === Subject.MATH) return 'MATH';
-    if (subjectEnum === Subject.THAI) return 'THAI';
-    if (subjectEnum === Subject.SCIENCE) return 'SCIENCE';
-    if (subjectEnum === Subject.ENGLISH) return 'ENGLISH';
-    return 'MATH';
+const convertToCode = (subject: Subject): string => {
+    return subject; // Just pass the string directly
 };
 
-// ✅ Teacher Login
+// ---------------------------------------------------------------------------
+// 🟢 SUBJECT MANAGEMENT (FIREBASE)
+// ---------------------------------------------------------------------------
+
+export const getSubjects = async (school: string): Promise<SubjectConfig[]> => {
+  try {
+    const snapshot = await db.ref(`subjects/${school}`).once('value');
+    const val = snapshot.val();
+    if (val) {
+      return Object.values(val);
+    }
+    return [];
+  } catch (e) {
+    console.error("Error fetching subjects", e);
+    return [];
+  }
+};
+
+export const addSubject = async (school: string, subject: SubjectConfig): Promise<boolean> => {
+  try {
+    await db.ref(`subjects/${school}/${subject.id}`).set(subject);
+    return true;
+  } catch (e) {
+    console.error("Error adding subject", e);
+    return false;
+  }
+};
+
+export const deleteSubject = async (school: string, subjectId: string): Promise<boolean> => {
+  try {
+    await db.ref(`subjects/${school}/${subjectId}`).remove();
+    return true;
+  } catch (e) {
+    console.error("Error deleting subject", e);
+    return false;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// 🟢 EXISTING API
+// ---------------------------------------------------------------------------
+
 export const teacherLogin = async (username: string, password: string): Promise<{success: boolean, teacher?: Teacher}> => {
   if (!GOOGLE_SCRIPT_URL) return { success: false };
   try {
@@ -54,7 +85,6 @@ export const teacherLogin = async (username: string, password: string): Promise<
   }
 };
 
-// ✅ Get All Teachers (Admin)
 export const getAllTeachers = async (): Promise<Teacher[]> => {
   if (!GOOGLE_SCRIPT_URL) return [];
   try {
@@ -67,7 +97,6 @@ export const getAllTeachers = async (): Promise<Teacher[]> => {
   }
 };
 
-// ✅ Manage Teacher (Admin: Add/Edit/Delete)
 export const manageTeacher = async (data: any) => {
     if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
     try {
@@ -90,7 +119,6 @@ export const manageTeacher = async (data: any) => {
     }
 };
 
-// ✅ Manage Student (Add/Edit/Delete)
 export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, school?: string, avatar?: string, grade?: string, teacherId?: string }): Promise<{success: boolean, student?: Student, message?: string, rawError?: boolean}> => {
   if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
   
@@ -118,29 +146,21 @@ export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', i
              };
         }
         return result;
-
     } catch (jsonError) {
         return { success: false, message: 'Server returned non-JSON response', rawError: true };
     }
-
   } catch (e) {
     return { success: false, message: 'Connection Error' };
   }
 };
 
-// ✅ Add New Student (Legacy Wrapper)
 export const addStudent = async (name: string, school: string, avatar: string, grade: string = 'P6', teacherId?: string): Promise<Student | null> => {
   const result = await manageStudent({ action: 'add', name, school, avatar, grade, teacherId });
-  if (result.success && result.student) {
-      return result.student;
-  }
-  if (result.success && (result as any).id) {
-      return result as any;
-  }
+  if (result.success && result.student) return result.student;
+  if (result.success && (result as any).id) return result as any;
   return null;
 };
 
-// ✅ Get Teacher Dashboard Data
 export const getTeacherDashboard = async (school: string) => {
   if (!GOOGLE_SCRIPT_URL) return { students: [], results: [], assignments: [], questions: [] };
   
@@ -174,10 +194,11 @@ export const getTeacherDashboard = async (school: string) => {
       id: String(a.id),
       school: String(a.school),
       subject: normalizeSubject(a.subject),
-      grade: a.grade || 'ALL', // ✅ Read grade from response
+      grade: a.grade || 'ALL', 
       questionCount: Number(a.questionCount),
       deadline: String(a.deadline).split('T')[0],
-      createdBy: String(a.createdBy)
+      createdBy: String(a.createdBy),
+      title: a.title || '' // ✅ Read Title
     }));
 
     return { ...data, students: cleanStudents, questions: cleanQuestions, assignments: cleanAssignments };
@@ -186,7 +207,6 @@ export const getTeacherDashboard = async (school: string) => {
   }
 }
 
-// ✅ Add Question
 export const addQuestion = async (question: any): Promise<boolean> => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
@@ -210,13 +230,12 @@ export const addQuestion = async (question: any): Promise<boolean> => {
   }
 };
 
-// ✅ Edit Question (New!)
 export const editQuestion = async (question: any): Promise<boolean> => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
     const subjectCode = convertToCode(question.subject);
     const params = new URLSearchParams({
-      type: 'edit_question', // Make sure to handle this in GAS
+      type: 'edit_question',
       id: question.id,
       subject: subjectCode,
       text: question.text,
@@ -234,7 +253,6 @@ export const editQuestion = async (question: any): Promise<boolean> => {
   }
 };
 
-// ✅ Delete Question
 export const deleteQuestion = async (id: string): Promise<boolean> => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
@@ -243,7 +261,6 @@ export const deleteQuestion = async (id: string): Promise<boolean> => {
         const result = await response.json();
         return result.success !== false;
     } catch {
-        // If not JSON (e.g. text 'Success'), treat as success if status is 200
         return response.ok;
     }
   } catch (e) {
@@ -251,18 +268,18 @@ export const deleteQuestion = async (id: string): Promise<boolean> => {
   }
 };
 
-// ✅ Add Assignment (Updated with Grade)
-export const addAssignment = async (school: string, subject: string, grade: string, questionCount: number, deadline: string, createdBy: string): Promise<boolean> => {
+export const addAssignment = async (school: string, subject: string, grade: string, questionCount: number, deadline: string, createdBy: string, title: string = ''): Promise<boolean> => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
     const params = new URLSearchParams({
         type: 'add_assignment',
         school,
         subject,
-        grade, // ✅ Send Grade
+        grade, 
         questionCount: String(questionCount),
         deadline,
-        createdBy
+        createdBy,
+        title: title // ✅ Send Title
     });
     await fetch(getUrl(`?${params.toString()}`));
     return true;
@@ -271,13 +288,10 @@ export const addAssignment = async (school: string, subject: string, grade: stri
   }
 };
 
-// ✅ Delete Assignment (Improved Robustness)
 export const deleteAssignment = async (id: string): Promise<boolean> => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
     const response = await fetch(getUrl(`?type=delete_assignment&id=${encodeURIComponent(id)}`));
-    
-    // Try to parse JSON. If it fails but request was OK, assume success (likely returned simple text).
     const text = await response.text();
     try {
         const result = JSON.parse(text);
@@ -286,12 +300,10 @@ export const deleteAssignment = async (id: string): Promise<boolean> => {
         return response.ok;
     }
   } catch (e) {
-    console.error("Delete assignment error", e);
     return false;
   }
 };
 
-// ✅ Save Score
 export const saveScore = async (studentId: string, studentName: string, school: string, score: number, total: number, subject: string, assignmentId?: string) => {
   if (!GOOGLE_SCRIPT_URL) return false;
   try {
@@ -304,7 +316,6 @@ export const saveScore = async (studentId: string, studentName: string, school: 
   }
 }
 
-// ✅ Fetch Initial App Data
 export const fetchAppData = async (): Promise<AppData> => {
   if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === '') {
     return { students: MOCK_STUDENTS, questions: MOCK_QUESTIONS, results: [], assignments: [] };
@@ -350,10 +361,11 @@ export const fetchAppData = async (): Promise<AppData> => {
       id: String(a.id), 
       school: String(a.school), 
       subject: normalizeSubject(a.subject),
-      grade: a.grade || 'ALL', // ✅ Read grade
+      grade: a.grade || 'ALL', 
       questionCount: Number(a.questionCount), 
       deadline: String(a.deadline).split('T')[0], 
-      createdBy: String(a.createdBy)
+      createdBy: String(a.createdBy),
+      title: a.title || '' // ✅ Read Title
     }));
 
     return { students: cleanStudents, questions: cleanQuestions, results: cleanResults, assignments: cleanAssignments };

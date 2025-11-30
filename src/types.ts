@@ -6,11 +6,11 @@ export interface Student {
   avatar: string; 
   stars: number; 
   grade?: string; 
-  teacherId?: string; // ✅ ระบุ ID ครูผู้ดูแล
+  teacherId?: string; 
 }
 
 export interface Teacher {
-  id?: string | number; // ✅ รองรับทั้ง String และ Number สำหรับ ID
+  id?: string | number; 
   username?: string;
   password?: string;
   name: string;
@@ -19,11 +19,18 @@ export interface Teacher {
   gradeLevel?: string; 
 }
 
-export enum Subject {
-  MATH = 'คณิตศาสตร์',
-  THAI = 'ภาษาไทย',
-  SCIENCE = 'วิทยาศาสตร์',
-  ENGLISH = 'ภาษาอังกฤษ'
+// ✅ Changed from Enum to string to support dynamic subjects
+export type Subject = string;
+
+// ✅ New Interface for Custom Subjects
+export interface SubjectConfig {
+  id: string;
+  name: string;
+  school: string;
+  teacherId: string;
+  grade: string;
+  icon: string; // Store icon name (e.g., 'Book', 'Calculator')
+  color: string; // Tailwind class string
 }
 
 export interface Question {
@@ -40,7 +47,7 @@ export interface Question {
   explanation: string;
   grade?: string; 
   school?: string; 
-  teacherId?: string; // ✅ เพิ่ม ID ครูเจ้าของข้อสอบ
+  teacherId?: string; 
 }
 
 export interface ExamResult {
@@ -57,10 +64,11 @@ export interface Assignment {
   id: string;
   school: string;
   subject: Subject;
-  grade?: string; // ✅ เพิ่มระดับชั้น
+  grade?: string; 
   questionCount: number;
   deadline: string; 
   createdBy: string;
+  title?: string; // ✅ ชื่อหัวข้อการบ้าน
 }
 
 export type GameState = 'LOBBY' | 'COUNTDOWN' | 'QUESTION' | 'LEADERBOARD' | 'FINISHED';

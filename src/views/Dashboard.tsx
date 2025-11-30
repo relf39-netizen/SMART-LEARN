@@ -77,7 +77,9 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                         {hw.grade && hw.grade !== 'ALL' && <span className="bg-purple-100 text-purple-600 text-xs font-bold px-2 py-1 rounded-lg">{GRADE_LABELS[hw.grade] || hw.grade}</span>}
                         <span className="text-xs text-gray-400">{new Date(result?.timestamp || 0).toLocaleString('th-TH')}</span>
                      </div>
-                     <div className="font-bold text-gray-800 text-lg">การบ้าน {hw.questionCount} ข้อ</div>
+                     <div className="font-bold text-gray-800 text-lg">
+                        {hw.title || `การบ้าน ${hw.subject}`} ({hw.questionCount} ข้อ)
+                     </div>
                      <div className="text-sm text-gray-500">กำหนดส่งเดิม: {formatDate(hw.deadline)}</div>
                      {hw.createdBy && <div className="text-xs text-purple-600 mt-1">ตรวจโดย: ครู{hw.createdBy}</div>}
                    </div>
@@ -141,12 +143,12 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                         <div key={hw.id} className={`p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center border gap-3 ${isExpired ? 'bg-red-50 border-red-100' : 'bg-orange-50 border-orange-100'}`}>
                             <div>
                                 <div className="font-bold text-gray-800 text-lg flex items-center gap-2">
-                                  {hw.subject} 
+                                  {hw.title || hw.subject} 
                                   {isExpired && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200">เลยกำหนด</span>}
                                   {hw.grade && hw.grade !== 'ALL' && <span className="text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full border border-purple-200">{GRADE_LABELS[hw.grade] || hw.grade}</span>}
                                 </div>
                                 <div className={`text-sm ${isExpired ? 'text-red-500 font-medium' : 'text-gray-600'}`}>
-                                  จำนวน {hw.questionCount} ข้อ • ส่งภายใน {formatDate(hw.deadline)}
+                                  วิชา: {hw.subject} • {hw.questionCount} ข้อ • ส่งภายใน {formatDate(hw.deadline)}
                                 </div>
                                 {hw.createdBy && (
                                    <div className="text-xs text-purple-600 mt-1 font-medium bg-purple-50 px-2 py-0.5 rounded w-fit">
