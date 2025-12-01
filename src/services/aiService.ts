@@ -9,13 +9,11 @@ export interface GeneratedQuestion {
   c4: string;
   correct: string;
   explanation: string;
-  image?: string; // ✅ เพิ่ม URL รูปภาพ
+  image?: string; 
 }
 
-// ฟังก์ชันสร้าง URL รูปภาพจาก Pollinations.ai
 const generateImageUrl = (description: string): string => {
   if (!description || description.trim().length === 0 || description.toLowerCase() === 'none') return '';
-  // เพิ่ม Prompt ให้ภาพออกมาน่ารักเหมาะกับเด็ก
   const encodedPrompt = encodeURIComponent(description + " cartoon style, for kids, educational, white background, simple, clear, high quality");
   return `https://image.pollinations.ai/prompt/${encodedPrompt}?nologo=true`;
 };
@@ -25,7 +23,8 @@ export const generateQuestionWithAI = async (
   grade: string,
   topic: string,
   apiKey: string,
-  count: number = 1 
+  count: number = 1,
+  style: 'normal' | 'onet' = 'normal' 
 ): Promise<GeneratedQuestion[] | null> => {
   try {
     if (!apiKey) {
@@ -35,18 +34,42 @@ export const generateQuestionWithAI = async (
     const ai = new GoogleGenAI({ apiKey: apiKey });
     const model = "gemini-2.5-flash";
     
+    let systemInstruction = "";
+    
+    if (style === 'onet') {
+      // 🟢 O-NET Specific Instruction
+      systemInstruction = `
+        You are an expert exam creator for Thailand's O-NET (Ordinary National Educational Test) for Grade 6 (Prathom 6).
+        Your task is to generate standardized exam questions by simulating the style, difficulty, and format of past O-NET exam papers (ข้อสอบเก่า).
+        
+        Key Requirements for O-NET Style:
+        - Reference: Mimic the style of actual past O-NET exams (ปี 2560-2566).
+        - Difficulty: Challenging, requiring critical thinking (คิดวิเคราะห์), integration of knowledge, not just rote memory.
+        - Language: Formal Academic Thai (ภาษาทางการแบบข้อสอบจริง).
+        - Subject Context: Strictly aligns with the Thai Basic Education Curriculum B.E. 2551 (Updated 2560).
+        - Question Types: Situation-based questions, reading comprehension, or problem-solving scenarios often found in O-NET.
+      `;
+    } else {
+      // 🟢 Normal Instruction
+      systemInstruction = `
+        You are a helpful teacher assistant creating multiple-choice questions for ${grade} grade students.
+        Language: Thai (Natural, age-appropriate, and encouraging).
+      `;
+    }
+
     const prompt = `
-      Create ${count} multiple-choice question(s) for ${grade} grade students.
+      ${systemInstruction}
+      
+      Task: Create ${count} multiple-choice question(s).
       Subject: ${subject}
-      Topic: ${topic}
-      Language: Thai (Make sure the question and choices are natural Thai).
+      Topic/Strand: ${topic}
       
       Requirements:
       - Return an array of objects.
       - Each object must have 4 choices (c1, c2, c3, c4).
       - Indicate the correct choice number (1, 2, 3, or 4).
-      - Provide a short explanation for the correct answer.
-      - If the question is about a visual object (e.g., shapes, animals, fruits) or would benefit from an illustration, provide a concise English description in the 'image_description' field. If no image is needed (e.g., math calculation, grammar), leave it empty or string "none".
+      - Provide a clear and educational explanation for the correct answer (in Thai).
+      - If the question involves a visual scenario (e.g., geometry, animal characteristics, map) provide a concise English description in 'image_description'. If no image is needed, use "none".
     `;
 
     const response = await ai.models.generateContent({
@@ -78,7 +101,6 @@ export const generateQuestionWithAI = async (
       const data = JSON.parse(response.text);
       const rawArray = Array.isArray(data) ? data : [data];
       
-      // Map and Generate Image URL
       return rawArray.map((item: any) => ({
         text: item.text,
         c1: item.c1,

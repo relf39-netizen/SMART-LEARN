@@ -32,7 +32,7 @@ const convertToCode = (subject: Subject): string => {
 };
 
 // ---------------------------------------------------------------------------
-// 🟢 SUBJECT MANAGEMENT (FIREBASE)
+// 🟢 SUBJECT MANAGEMENT (FIREBASE) - KEEP AS REQUESTED
 // ---------------------------------------------------------------------------
 
 export const getSubjects = async (school: string): Promise<SubjectConfig[]> => {
@@ -70,13 +70,16 @@ export const deleteSubject = async (school: string, subjectId: string): Promise<
 };
 
 // ---------------------------------------------------------------------------
-// 🟢 EXISTING API
+// 🟢 EXISTING API (GOOGLE APPS SCRIPT)
 // ---------------------------------------------------------------------------
 
 export const teacherLogin = async (username: string, password: string): Promise<{success: boolean, teacher?: Teacher}> => {
   if (!GOOGLE_SCRIPT_URL) return { success: false };
   try {
-    const response = await fetch(getUrl(`?type=teacher_login&username=${username}&password=${password}`));
+    // ✅ Trim inputs to prevent whitespace errors
+    const u = username.trim();
+    const p = password.trim();
+    const response = await fetch(getUrl(`?type=teacher_login&username=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}`));
     const data = await response.json();
     return data;
   } catch (e) {
@@ -97,7 +100,16 @@ export const getAllTeachers = async (): Promise<Teacher[]> => {
   }
 };
 
-export const manageTeacher = async (data: any) => {
+export const manageTeacher = async (data: { 
+    action: 'add' | 'delete' | 'edit', 
+    id?: string, 
+    username?: string, 
+    password?: string, 
+    name?: string, 
+    school?: string, 
+    role?: string, 
+    gradeLevel?: string 
+}): Promise<{success: boolean, message?: string}> => {
     if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
     try {
         const params = new URLSearchParams();
