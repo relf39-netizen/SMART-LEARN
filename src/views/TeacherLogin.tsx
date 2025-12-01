@@ -26,6 +26,7 @@ const TeacherLogin: React.FC<TeacherLoginProps> = ({ onLoginSuccess, onBack }) =
         onLoginSuccess(result.teacher);
       } else {
         setError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+        setPassword(''); // Clear password on error
       }
     } catch (err) {
       setError('เกิดข้อผิดพลาดในการเชื่อมต่อ');
@@ -88,10 +89,6 @@ const TeacherLogin: React.FC<TeacherLoginProps> = ({ onLoginSuccess, onBack }) =
             {loading ? 'กำลังตรวจสอบ...' : 'เข้าสู่ระบบ'}
           </button>
         </form>
-        
-        <div className="mt-6 pt-6 border-t border-gray-100 text-center">
-           <p className="text-xs text-gray-400">สำหรับแอดมิน: เพิ่มรายชื่อครูใน Sheet 'Teachers'</p>
-        </div>
       </div>
     </div>
   );

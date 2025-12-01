@@ -3,12 +3,7 @@
 
 import { Student, Question, Teacher, Subject, ExamResult, Assignment, SubjectConfig } from '../types'; 
 import { MOCK_STUDENTS, MOCK_QUESTIONS } from '../constants';
-import { db } from './firebaseConfig'; // Import Firebase DB
-
-// ---------------------------------------------------------------------------
-// 🟢 Web App URL
-// ---------------------------------------------------------------------------
-export const GOOGLE_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbxuK3FqdTahB8trhbMoD3MbkfvKO774Uxq1D32s3vvjmDxT4IMOfaprncIvD89zbTDj/exec'; 
+import { db, firebase } from './firebaseConfig'; // Import Firebase DB
 
 export interface AppData {
   students: Student[];
@@ -17,31 +12,71 @@ export interface AppData {
   assignments: Assignment[];
 }
 
-const getUrl = (params: string) => {
-  const separator = params.includes('?') ? '&' : '?';
-  return `${GOOGLE_SCRIPT_URL}${params}${separator}_t=${Date.now()}`;
+// Helper: Convert Firebase Object to Array
+const snapshotToArray = <T>(snapshot: any): T[] => {
+  if (!snapshot || !snapshot.val()) return [];
+  const returnArr: T[] = [];
+  snapshot.forEach((childSnapshot: any) => {
+    const item = childSnapshot.val();
+    item.id = childSnapshot.key; // Use Firebase Key as ID
+    returnArr.push(item);
+  });
+  return returnArr;
 };
 
-// ✅ Removed strict normalization to allow dynamic subjects
+// 🔄 ฟังก์ชันช่วยแปลงรหัสวิชา (ถ้าจำเป็น)
 const normalizeSubject = (rawSubject: string): Subject => {
   return String(rawSubject).trim();
 };
 
-const convertToCode = (subject: Subject): string => {
-    return subject; // Just pass the string directly
+// ---------------------------------------------------------------------------
+// 🟢 SYSTEM INITIALIZATION (SEEDING)
+// ---------------------------------------------------------------------------
+
+const seedDatabase = async () => {
+    console.log("🌱 Seeding database with initial data...");
+    
+    // 1. Seed Students
+    const studentRef = db.ref('students');
+    for (const s of MOCK_STUDENTS) {
+        await studentRef.child(s.id).set({ ...s, stars: 0 });
+    }
+
+    // 2. Seed Questions
+    const questionRef = db.ref('questions');
+    for (const q of MOCK_QUESTIONS) {
+        const newRef = questionRef.push();
+        await newRef.set({ 
+            ...q, 
+            id: newRef.key,
+            school: 'CENTER', // Default to center so everyone sees it
+            grade: q.grade || 'P6'
+        });
+    }
+
+    // 3. Seed Default Subjects (Optional)
+    const defaultSubjects = [
+        { name: 'คณิตศาสตร์', icon: 'Calculator', color: 'bg-red-50 hover:bg-red-100 border-red-200 text-red-600', grade: 'ALL' },
+        { name: 'วิทยาศาสตร์', icon: 'FlaskConical', color: 'bg-green-50 hover:bg-green-100 border-green-200 text-green-600', grade: 'ALL' },
+        { name: 'ภาษาไทย', icon: 'Book', color: 'bg-yellow-50 hover:bg-yellow-100 border-yellow-200 text-yellow-600', grade: 'ALL' },
+        { name: 'ภาษาอังกฤษ', icon: 'Languages', color: 'bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-600', grade: 'ALL' }
+    ];
+    // Seed subjects for "System" or default school
+    // Note: In a real scenario, we might want to attach this to a specific school
 };
 
 // ---------------------------------------------------------------------------
-// 🟢 SUBJECT MANAGEMENT (FIREBASE) - KEEP AS REQUESTED
+// 🟢 SUBJECT MANAGEMENT (FIREBASE)
 // ---------------------------------------------------------------------------
 
 export const getSubjects = async (school: string): Promise<SubjectConfig[]> => {
   try {
     const snapshot = await db.ref(`subjects/${school}`).once('value');
-    const val = snapshot.val();
-    if (val) {
-      return Object.values(val);
+    if (snapshot.exists()) {
+        const data = snapshot.val();
+        return Object.keys(data).map(key => ({ ...data[key], id: key }));
     }
+    // Fallback: If no subjects, return default list visually (but don't save unless added)
     return [];
   } catch (e) {
     console.error("Error fetching subjects", e);
@@ -51,7 +86,8 @@ export const getSubjects = async (school: string): Promise<SubjectConfig[]> => {
 
 export const addSubject = async (school: string, subject: SubjectConfig): Promise<boolean> => {
   try {
-    await db.ref(`subjects/${school}/${subject.id}`).set(subject);
+    const newRef = db.ref(`subjects/${school}`).push();
+    await newRef.set({ ...subject, id: newRef.key });
     return true;
   } catch (e) {
     console.error("Error adding subject", e);
@@ -70,18 +106,41 @@ export const deleteSubject = async (school: string, subjectId: string): Promise<
 };
 
 // ---------------------------------------------------------------------------
-// 🟢 EXISTING API (GOOGLE APPS SCRIPT)
+// 🟢 TEACHER MANAGEMENT (FIREBASE)
 // ---------------------------------------------------------------------------
 
 export const teacherLogin = async (username: string, password: string): Promise<{success: boolean, teacher?: Teacher}> => {
-  if (!GOOGLE_SCRIPT_URL) return { success: false };
   try {
-    // ✅ Trim inputs to prevent whitespace errors
-    const u = username.trim();
-    const p = password.trim();
-    const response = await fetch(getUrl(`?type=teacher_login&username=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}`));
-    const data = await response.json();
-    return data;
+    // 1. Try to find the user in Firebase
+    const snapshot = await db.ref('teachers')
+                             .orderByChild('username')
+                             .equalTo(username)
+                             .once('value');
+    
+    if (snapshot.exists()) {
+      const teachers = snapshotToArray<Teacher>(snapshot);
+      const teacher = teachers[0];
+      if (teacher && teacher.password === password) {
+        return { success: true, teacher };
+      }
+    } else {
+        // 2. 🚨 SPECIAL FALLBACK: If 'admin' doesn't exist, CREATE IT automatically
+        // This solves the "No Data" problem for the first login.
+        if (username === 'admin' && password === '1234') {
+             const newAdmin: Teacher = {
+                 id: 'admin_root',
+                 username: 'admin',
+                 password: '1234',
+                 name: 'Super Admin',
+                 school: 'System', // System level
+                 role: 'ADMIN',
+                 gradeLevel: 'ALL'
+             };
+             await db.ref('teachers/admin_root').set(newAdmin);
+             return { success: true, teacher: newAdmin };
+        }
+    }
+    return { success: false };
   } catch (e) {
     console.error("Login error", e);
     return { success: false };
@@ -89,11 +148,9 @@ export const teacherLogin = async (username: string, password: string): Promise<
 };
 
 export const getAllTeachers = async (): Promise<Teacher[]> => {
-  if (!GOOGLE_SCRIPT_URL) return [];
   try {
-    const response = await fetch(getUrl(`?type=get_teachers`));
-    const data = await response.json();
-    return Array.isArray(data) ? data : [];
+    const snapshot = await db.ref('teachers').once('value');
+    return snapshotToArray<Teacher>(snapshot);
   } catch (e) {
     console.error("Get teachers error", e);
     return [];
@@ -110,229 +167,196 @@ export const manageTeacher = async (data: {
     role?: string, 
     gradeLevel?: string 
 }): Promise<{success: boolean, message?: string}> => {
-    if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
     try {
-        const params = new URLSearchParams();
-        params.append('type', 'manage_teacher');
-        
-        if (data.action) params.append('action', data.action);
-        if (data.id) params.append('id', String(data.id));
-        if (data.username) params.append('username', data.username);
-        if (data.password) params.append('password', data.password);
-        if (data.name) params.append('name', data.name);
-        if (data.school) params.append('school', data.school);
-        if (data.role) params.append('role', data.role);
-        if (data.gradeLevel) params.append('gradeLevel', data.gradeLevel);
-        
-        const response = await fetch(getUrl(`?${params.toString()}`));
-        return await response.json();
+        if (data.action === 'add') {
+             const newRef = db.ref('teachers').push();
+             await newRef.set({
+                 id: newRef.key,
+                 name: data.name,
+                 username: data.username,
+                 password: data.password,
+                 school: data.school,
+                 role: data.role,
+                 gradeLevel: data.gradeLevel
+             });
+        } else if (data.action === 'edit' && data.id) {
+             const updateData: any = {};
+             if (data.name) updateData.name = data.name;
+             if (data.password) updateData.password = data.password;
+             if (data.school) updateData.school = data.school;
+             if (data.gradeLevel) updateData.gradeLevel = data.gradeLevel;
+             await db.ref(`teachers/${data.id}`).update(updateData);
+        } else if (data.action === 'delete' && data.id) {
+             await db.ref(`teachers/${data.id}`).remove();
+        }
+        return { success: true };
     } catch (e) {
-        return { success: false, message: 'Connection Error' };
+        return { success: false, message: 'Firebase Error' };
     }
 };
 
-export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, school?: string, avatar?: string, grade?: string, teacherId?: string }): Promise<{success: boolean, student?: Student, message?: string, rawError?: boolean}> => {
-  if (!GOOGLE_SCRIPT_URL) return { success: false, message: 'No URL' };
-  
-  try {
-    const params = new URLSearchParams();
-    params.append('type', data.action === 'add' ? 'add_student' : 'manage_student');
-    
-    if (data.action) params.append('action', data.action);
-    if (data.id) params.append('id', String(data.id));
-    if (data.name) params.append('name', String(data.name));
-    if (data.school) params.append('school', String(data.school));
-    if (data.avatar) params.append('avatar', String(data.avatar));
-    if (data.grade) params.append('grade', String(data.grade));
-    if (data.teacherId) params.append('teacherId', String(data.teacherId));
-    
-    const response = await fetch(getUrl(`?${params.toString()}`));
-    const text = await response.text();
+// ---------------------------------------------------------------------------
+// 🟢 STUDENT MANAGEMENT (FIREBASE)
+// ---------------------------------------------------------------------------
 
-    try {
-        const result = JSON.parse(text);
-        if (data.action === 'add' && result.success && !result.student && result.id) {
-             return { 
-                 success: true, 
-                 student: { id: result.id, name: result.name, school: result.school, avatar: result.avatar, stars: 0, grade: result.grade, teacherId: result.teacherId } 
-             };
-        }
-        return result;
-    } catch (jsonError) {
-        return { success: false, message: 'Server returned non-JSON response', rawError: true };
+export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', id?: string, name?: string, school?: string, avatar?: string, grade?: string, teacherId?: string }): Promise<{success: boolean, student?: Student, message?: string}> => {
+  try {
+    if (data.action === 'add') {
+         // สร้าง ID 5 หลักแบบสุ่ม (เช็คซ้ำง่ายๆ)
+         let newId = Math.floor(10000 + Math.random() * 90000).toString();
+         
+         await db.ref(`students/${newId}`).set({
+             id: newId,
+             name: data.name,
+             school: data.school,
+             avatar: data.avatar,
+             grade: data.grade,
+             teacherId: data.teacherId,
+             stars: 0
+         });
+         
+         const newStudent: Student = { 
+             id: newId, 
+             name: data.name!, 
+             school: data.school, 
+             avatar: data.avatar!, 
+             stars: 0, 
+             grade: data.grade, 
+             teacherId: data.teacherId 
+         };
+         return { success: true, student: newStudent };
+
+    } else if (data.action === 'edit' && data.id) {
+         const updateData: any = {};
+         if (data.name) updateData.name = data.name;
+         if (data.avatar) updateData.avatar = data.avatar;
+         if (data.grade) updateData.grade = data.grade;
+         
+         await db.ref(`students/${data.id}`).update(updateData);
+         return { success: true };
+
+    } else if (data.action === 'delete' && data.id) {
+         await db.ref(`students/${data.id}`).remove();
+         return { success: true };
     }
+    return { success: false };
   } catch (e) {
-    return { success: false, message: 'Connection Error' };
+    return { success: false, message: 'Firebase Error' };
   }
 };
 
 export const addStudent = async (name: string, school: string, avatar: string, grade: string = 'P6', teacherId?: string): Promise<Student | null> => {
   const result = await manageStudent({ action: 'add', name, school, avatar, grade, teacherId });
   if (result.success && result.student) return result.student;
-  if (result.success && (result as any).id) return result as any;
   return null;
 };
 
+// ---------------------------------------------------------------------------
+// 🟢 DASHBOARD DATA (FIREBASE)
+// ---------------------------------------------------------------------------
+
 export const getTeacherDashboard = async (school: string) => {
-  if (!GOOGLE_SCRIPT_URL) return { students: [], results: [], assignments: [], questions: [] };
-  
   try {
-    const response = await fetch(getUrl(`?type=teacher_data&school=${school}`));
-    const data = await response.json();
+    const [studentsSnap, resultsSnap, assignmentsSnap, questionsSnap] = await Promise.all([
+        db.ref('students').orderByChild('school').equalTo(school).once('value'),
+        db.ref('results').orderByChild('school').equalTo(school).once('value'),
+        db.ref('assignments').orderByChild('school').equalTo(school).once('value'),
+        db.ref('questions').once('value') 
+    ]);
 
-    const cleanQuestions = (data.questions || []).map((q: any) => ({
-      ...q,
-      id: String(q.id).trim(),
-      text: String(q.text || ''), 
-      subject: normalizeSubject(q.subject),
-      choices: q.choices.map((c: any) => ({ 
-          ...c, 
-          id: String(c.id), 
-          text: String(c.text || '') 
-      })),
-      correctChoiceId: String(q.correctChoiceId),
-      grade: q.grade || 'ALL',
-      school: q.school || 'CENTER',
-      teacherId: q.teacherId ? String(q.teacherId) : undefined
-    }));
-    
-    const cleanStudents = (data.students || []).map((s: any) => ({
-      ...s,
-      id: String(s.id).trim(),
-      teacherId: s.teacherId ? String(s.teacherId) : undefined
-    }));
+    const students = snapshotToArray<Student>(studentsSnap);
+    const results = snapshotToArray<ExamResult>(resultsSnap);
+    const assignments = snapshotToArray<Assignment>(assignmentsSnap);
+    const questions = snapshotToArray<Question>(questionsSnap);
 
-    const cleanAssignments = (data.assignments || []).map((a: any) => ({
-      id: String(a.id),
-      school: String(a.school),
-      subject: normalizeSubject(a.subject),
-      grade: a.grade || 'ALL', 
-      questionCount: Number(a.questionCount),
-      deadline: String(a.deadline).split('T')[0],
-      createdBy: String(a.createdBy),
-      title: a.title || '' // ✅ Read Title
-    }));
+    const filteredQuestions = questions.filter(q => q.school === school || q.school === 'CENTER' || q.school === 'Admin');
 
-    // 🟢 Clean and Fix Results (Handle column shifts)
-    const cleanResults = (data.results || []).map((r: any) => {
-      let subject = normalizeSubject(r.subject);
-      let score = Number(r.score);
-      let total = Number(r.total);
-
-      // ⚠️ Heuristic Fix: Detect shifted columns
-      // If 'total' is NaN (likely a string subject) AND 'subject' looks like a number (likely a score)
-      if (isNaN(total) && !isNaN(Number(r.subject))) {
-          // Assuming shift: Subject(Col5) is Score, Score(Col6) is Total, Total(Col7) is Subject
-          // Check if r.score is also a number (Total)
-          if (!isNaN(Number(r.score))) {
-             const realScore = Number(r.subject);
-             const realTotal = Number(r.score);
-             const realSubject = String(r.total); // Normalize this?
-             
-             return {
-                id: Math.random().toString(36).substr(2, 9),
-                studentId: String(r.studentId),
-                subject: normalizeSubject(realSubject),
-                score: realScore,
-                totalQuestions: realTotal,
-                timestamp: new Date(r.timestamp).getTime(),
-                assignmentId: r.assignmentId !== '-' ? r.assignmentId : undefined
-             };
-          }
-      }
-
-      return {
-        id: Math.random().toString(36).substr(2, 9),
-        studentId: String(r.studentId),
-        subject: subject,
-        score: isNaN(score) ? 0 : score,
-        totalQuestions: isNaN(total) ? 0 : total,
-        timestamp: new Date(r.timestamp).getTime(),
-        assignmentId: r.assignmentId !== '-' ? r.assignmentId : undefined
-      };
-    });
-
-    return { ...data, students: cleanStudents, questions: cleanQuestions, assignments: cleanAssignments, results: cleanResults };
+    return { 
+        students: students, 
+        results: results, 
+        assignments: assignments, 
+        questions: filteredQuestions 
+    };
   } catch (e) {
+    console.error(e);
     return { students: [], results: [], assignments: [], questions: [] };
   }
 }
 
+// ---------------------------------------------------------------------------
+// 🟢 QUESTION MANAGEMENT (FIREBASE)
+// ---------------------------------------------------------------------------
+
 export const addQuestion = async (question: any): Promise<boolean> => {
-  if (!GOOGLE_SCRIPT_URL) return false;
   try {
-    const subjectCode = convertToCode(question.subject);
-    const params = new URLSearchParams({
-      type: 'add_question',
-      subject: subjectCode,
-      text: question.text,
-      image: question.image || '',
-      c1: question.c1, c2: question.c2, c3: question.c3, c4: question.c4,
-      correct: question.correct,
-      explanation: question.explanation,
-      grade: question.grade,
-      school: question.school || '',
-      teacherId: question.teacherId || ''
+    const newRef = db.ref('questions').push();
+    await newRef.set({
+      ...question,
+      id: newRef.key,
+      choices: [
+          { id: '1', text: question.c1 },
+          { id: '2', text: question.c2 },
+          { id: '3', text: question.c3 },
+          { id: '4', text: question.c4 },
+      ],
+      correctChoiceId: question.correct
     });
-    await fetch(getUrl(`?${params.toString()}`));
+    return true;
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
+};
+
+export const editQuestion = async (question: any): Promise<boolean> => {
+  try {
+    if (!question.id) return false;
+    await db.ref(`questions/${question.id}`).update({
+        subject: question.subject,
+        grade: question.grade,
+        text: question.text,
+        image: question.image || '',
+        choices: [
+            { id: '1', text: question.c1 },
+            { id: '2', text: question.c2 },
+            { id: '3', text: question.c3 },
+            { id: '4', text: question.c4 },
+        ],
+        correctChoiceId: question.correct,
+        explanation: question.explanation
+    });
     return true;
   } catch (e) {
     return false;
   }
 };
 
-export const editQuestion = async (question: any): Promise<boolean> => {
-  if (!GOOGLE_SCRIPT_URL) return false;
+export const deleteQuestion = async (id: string): Promise<boolean> => {
   try {
-    const subjectCode = convertToCode(question.subject);
-    const params = new URLSearchParams({
-      type: 'edit_question',
-      id: question.id,
-      subject: subjectCode,
-      text: question.text,
-      image: question.image || '',
-      c1: question.c1, c2: question.c2, c3: question.c3, c4: question.c4,
-      correct: question.correct,
-      explanation: question.explanation,
-      grade: question.grade
-    });
-    const response = await fetch(getUrl(`?${params.toString()}`));
-    const result = await response.json();
-    return result.success;
+    await db.ref(`questions/${id}`).remove();
+    return true;
   } catch (e) {
     return false;
   }
 };
 
-export const deleteQuestion = async (id: string): Promise<boolean> => {
-  if (!GOOGLE_SCRIPT_URL) return false;
-  try {
-    const response = await fetch(getUrl(`?type=delete_question&id=${encodeURIComponent(id)}`));
-    try {
-        const result = await response.json();
-        return result.success !== false;
-    } catch {
-        return response.ok;
-    }
-  } catch (e) {
-    return false;
-  }
-};
+// ---------------------------------------------------------------------------
+// 🟢 ASSIGNMENT MANAGEMENT (FIREBASE)
+// ---------------------------------------------------------------------------
 
 export const addAssignment = async (school: string, subject: string, grade: string, questionCount: number, deadline: string, createdBy: string, title: string = ''): Promise<boolean> => {
-  if (!GOOGLE_SCRIPT_URL) return false;
   try {
-    const params = new URLSearchParams({
-        type: 'add_assignment',
+    const newRef = db.ref('assignments').push();
+    await newRef.set({
+        id: newRef.key,
         school,
         subject,
-        grade, 
-        questionCount: String(questionCount),
+        grade,
+        questionCount,
         deadline,
         createdBy,
-        title: title // ✅ Send Title
+        title
     });
-    await fetch(getUrl(`?${params.toString()}`));
     return true;
   } catch (e) {
     return false;
@@ -340,107 +364,90 @@ export const addAssignment = async (school: string, subject: string, grade: stri
 };
 
 export const deleteAssignment = async (id: string): Promise<boolean> => {
-  if (!GOOGLE_SCRIPT_URL) return false;
   try {
-    const response = await fetch(getUrl(`?type=delete_assignment&id=${encodeURIComponent(id)}`));
-    const text = await response.text();
-    try {
-        const result = JSON.parse(text);
-        return result.success !== false;
-    } catch {
-        return response.ok;
-    }
+    await db.ref(`assignments/${id}`).remove();
+    return true;
   } catch (e) {
     return false;
   }
 };
 
+// ---------------------------------------------------------------------------
+// 🟢 SCORE SAVING (FIREBASE)
+// ---------------------------------------------------------------------------
+
 export const saveScore = async (studentId: string, studentName: string, school: string, score: number, total: number, subject: string, assignmentId?: string) => {
-  if (!GOOGLE_SCRIPT_URL) return false;
   try {
-    const aidParam = assignmentId ? `&assignmentId=${encodeURIComponent(assignmentId)}` : '';
-    const url = `?type=save_score&studentId=${studentId}&studentName=${encodeURIComponent(studentName)}&school=${encodeURIComponent(school)}&score=${score}&total=${total}&subject=${encodeURIComponent(subject)}${aidParam}`;
-    await fetch(getUrl(url));
+    const newRef = db.ref('results').push();
+    await newRef.set({
+        id: newRef.key,
+        studentId,
+        studentName,
+        school,
+        score,
+        totalQuestions: total,
+        subject,
+        assignmentId: assignmentId || '-',
+        timestamp: firebase.database.ServerValue.TIMESTAMP
+    });
+    
+    // Update Student Stars
+    const studentRef = db.ref(`students/${studentId}`);
+    studentRef.child('stars').transaction((currentStars) => {
+        return (currentStars || 0) + score;
+    });
+
     return true;
   } catch (e) {
+    console.error(e);
     return false;
   }
 }
 
+// ---------------------------------------------------------------------------
+// 🟢 FETCH ALL APP DATA (INITIAL LOAD)
+// ---------------------------------------------------------------------------
+
 export const fetchAppData = async (): Promise<AppData> => {
-  if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL === '') {
-    return { students: MOCK_STUDENTS, questions: MOCK_QUESTIONS, results: [], assignments: [] };
-  }
   try {
-    const response = await fetch(getUrl(`?type=json`));
-    const textData = await response.text();
-    if (textData.trim().startsWith('<')) throw new Error('Invalid JSON response');
-    const data = JSON.parse(textData);
-    
-    const cleanStudents = (data.students || []).map((s: any) => ({
-      ...s, id: String(s.id).trim(), stars: Number(s.stars) || 0, grade: s.grade || 'P6',
-      teacherId: s.teacherId ? String(s.teacherId) : undefined
-    }));
-    
-    const cleanQuestions = (data.questions || []).map((q: any) => ({
-      ...q, 
-      id: String(q.id).trim(), 
-      text: String(q.text || ''), 
-      subject: normalizeSubject(q.subject),
-      choices: q.choices.map((c: any) => ({ 
-          ...c, 
-          id: String(c.id),
-          text: String(c.text || '') 
-      })),
-      correctChoiceId: String(q.correctChoiceId),
-      grade: q.grade || 'ALL',
-      school: q.school || 'CENTER',
-      teacherId: q.teacherId ? String(q.teacherId) : undefined
-    }));
+    const snapshot = await db.ref('/').once('value');
+    let data = snapshot.val();
 
-    // 🟢 Clean Results with Fix Logic (Same as Teacher Dashboard)
-    const cleanResults = (data.results || []).map((r: any) => {
-      let subject = normalizeSubject(r.subject);
-      let score = Number(r.score);
-      let total = Number(r.total);
+    // 🌟 AUTO-SEED: If database is empty, seed mock data
+    if (!data || (!data.students && !data.questions)) {
+        await seedDatabase();
+        // Fetch again after seeding
+        const newSnap = await db.ref('/').once('value');
+        data = newSnap.val();
+    }
 
-      // Heuristic Fix for swapped columns in Google Sheet
-      if (isNaN(total) && !isNaN(Number(r.subject)) && !isNaN(Number(r.score))) {
-          return {
-            id: Math.random().toString(36).substr(2, 9),
-            studentId: String(r.studentId),
-            subject: normalizeSubject(String(r.total)), // Subject is in Total column
-            score: Number(r.subject),                   // Score is in Subject column
-            totalQuestions: Number(r.score),            // Total is in Score column
-            timestamp: new Date(r.timestamp).getTime(),
-            assignmentId: r.assignmentId !== '-' ? r.assignmentId : undefined
-          };
-      }
+    if (!data) return { students: [], questions: [], results: [], assignments: [] };
 
-      return {
-        id: Math.random().toString(36).substr(2, 9),
-        studentId: String(r.studentId),
-        subject: subject,
-        score: isNaN(score) ? 0 : score,
-        totalQuestions: isNaN(total) ? 0 : total,
-        timestamp: new Date(r.timestamp).getTime(),
-        assignmentId: r.assignmentId !== '-' ? r.assignmentId : undefined
-      };
-    });
-    
-    const cleanAssignments = (data.assignments || []).map((a: any) => ({
-      id: String(a.id), 
-      school: String(a.school), 
-      subject: normalizeSubject(a.subject),
-      grade: a.grade || 'ALL', 
-      questionCount: Number(a.questionCount), 
-      deadline: String(a.deadline).split('T')[0], 
-      createdBy: String(a.createdBy),
-      title: a.title || '' // ✅ Read Title
-    }));
+    const studentsArr: Student[] = data.students 
+        ? Object.keys(data.students).map(k => ({...data.students[k], id: k})) 
+        : [];
+        
+    const questionsArr: Question[] = data.questions 
+        ? Object.keys(data.questions).map(k => ({...data.questions[k], id: k})) 
+        : [];
 
-    return { students: cleanStudents, questions: cleanQuestions, results: cleanResults, assignments: cleanAssignments };
+    const resultsArr: ExamResult[] = data.results 
+        ? Object.keys(data.results).map(k => ({...data.results[k], id: k})) 
+        : [];
+
+    const assignmentsArr: Assignment[] = data.assignments 
+        ? Object.keys(data.assignments).map(k => ({...data.assignments[k], id: k})) 
+        : [];
+
+    return { 
+        students: studentsArr, 
+        questions: questionsArr, 
+        results: resultsArr, 
+        assignments: assignmentsArr 
+    };
+
   } catch (error) {
+    console.error("Firebase fetch error:", error);
     return { students: MOCK_STUDENTS, questions: MOCK_QUESTIONS, results: [], assignments: [] };
   }
 };

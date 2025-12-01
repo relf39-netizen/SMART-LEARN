@@ -1,4 +1,3 @@
-
 // utils/soundUtils.ts
 
 // --- Sound Assets (ลิงก์เพลงฟรีไม่มีลิขสิทธิ์) ---
@@ -9,6 +8,9 @@ const SOUNDS = {
   // เพลง Game: จังหวะตื่นเต้น เร้าใจ (เปลี่ยนลิงก์ใหม่ให้โหลดง่ายขึ้น)
   BGM_GAME: 'https://cdn.pixabay.com/audio/2021/09/06/audio_3719979729.mp3', 
   
+  // เพลง Practice: ฟังสบายๆ มีสมาธิ
+  BGM_PRACTICE: 'https://cdn.pixabay.com/audio/2022/01/18/audio_d0a13f69d2.mp3',
+
   // เพลง Victory: ชัยชนะ
   BGM_VICTORY: 'https://cdn.pixabay.com/audio/2021/08/04/audio_12b0cd4862.mp3',
   
@@ -32,27 +34,28 @@ if ('speechSynthesis' in window) {
 }
 };
 
-export const playBGM = (type: 'LOBBY' | 'GAME' | 'VICTORY') => {
+export const playBGM = (type: 'LOBBY' | 'GAME' | 'PRACTICE' | 'VICTORY') => {
   if (isMuted) return;
   
-  // ถ้าเป็นเพลงเดิมและเล่นอยู่แล้ว ไม่ต้องโหลดใหม่
-  if (bgmAudio && !bgmAudio.paused && bgmAudio.src.includes(type === 'GAME' ? 'audio_3719979729' : 'audio_c8c8a73467')) {
+  // ตรวจสอบว่าเพลงเดิมเล่นอยู่หรือไม่ ถ้าใช่และเป็นประเภทเดิม ไม่ต้องโหลดใหม่
+  let targetSrc = '';
+  switch (type) {
+      case 'LOBBY': targetSrc = SOUNDS.BGM_LOBBY; break;
+      case 'GAME': targetSrc = SOUNDS.BGM_GAME; break;
+      case 'PRACTICE': targetSrc = SOUNDS.BGM_PRACTICE; break;
+      case 'VICTORY': targetSrc = SOUNDS.BGM_VICTORY; break;
+  }
+
+  if (bgmAudio && !bgmAudio.paused && bgmAudio.src === targetSrc) {
       return;
   }
 
   stopBGM(); // หยุดเพลงเก่า
 
-  let src = '';
-  switch (type) {
-      case 'LOBBY': src = SOUNDS.BGM_LOBBY; break;
-      case 'GAME': src = SOUNDS.BGM_GAME; break;
-      case 'VICTORY': src = SOUNDS.BGM_VICTORY; break;
-  }
-
-  if (src) {
-      bgmAudio = new Audio(src);
+  if (targetSrc) {
+      bgmAudio = new Audio(targetSrc);
       bgmAudio.loop = true;
-      bgmAudio.volume = 0.5; // เพิ่มความดังเป็น 50%
+      bgmAudio.volume = 0.3; // ลดระดับเสียง BGM ลงเพื่อไม่ให้กลบเสียงพูด
       const playPromise = bgmAudio.play();
       
       if (playPromise !== undefined) {
@@ -93,6 +96,7 @@ export const toggleMuteSystem = (muteState: boolean) => {
   isMuted = muteState;
   if (isMuted) {
       if (bgmAudio) bgmAudio.pause();
+      window.speechSynthesis.cancel();
   } else {
       if (bgmAudio) bgmAudio.play().catch(() => {});
   }
