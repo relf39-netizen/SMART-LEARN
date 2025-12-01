@@ -7,7 +7,7 @@ interface DashboardProps {
   student: Student;
   assignments?: Assignment[]; 
   examResults?: ExamResult[]; 
-  subjects?: SubjectConfig[]; // ✅ รับค่ารายวิชาแบบ Dynamic
+  subjects?: SubjectConfig[]; 
   onNavigate: (page: string) => void;
   onStartAssignment?: (assignment: Assignment) => void;
   onSelectSubject?: (subjectName: string) => void;
@@ -22,7 +22,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   onStartAssignment,
   onSelectSubject 
 }) => {
-  // state สำหรับสลับหน้าระหว่าง 'main' (หน้าหลัก) กับ 'history' (ประวัติ)
   const [view, setView] = useState<'main' | 'history'>('main');
 
   const GRADE_LABELS: Record<string, string> = { 'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6', 'ALL': 'ทุกชั้น' };
@@ -132,16 +131,14 @@ const Dashboard: React.FC<DashboardProps> = ({
   return (
     <div className="space-y-8 pb-20">
       {/* 1. Welcome Banner */}
-      <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
+      <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
         <div className="absolute top-0 right-0 opacity-10 transform translate-x-10 -translate-y-10"><Star size={150} /></div>
         <div className="relative z-10 flex items-center gap-4">
           <div className="text-5xl bg-white/20 p-3 rounded-full backdrop-blur-sm shadow-inner">{student.avatar}</div>
           <div>
             <h2 className="text-2xl font-bold mb-1">สวัสดี, {student.name.split(' ')[0]}!</h2>
-            <div className="flex gap-2 text-blue-100 items-center text-sm">
-                <span>ชั้น {GRADE_LABELS[student.grade || 'P6'] || student.grade}</span>
-                <span>•</span>
-                <span>{student.school}</span>
+            <div className="flex gap-2 text-indigo-100 items-center text-sm">
+                <span>ยินดีต้อนรับสู่ LittleSchool LearnUp</span>
             </div>
             <div className="flex items-center gap-2 mt-2 bg-black/20 w-fit px-3 py-1 rounded-full"><Star className="text-yellow-300 fill-yellow-300" size={16} /><span className="font-bold">{student.stars} ดาว</span></div>
           </div>
@@ -197,7 +194,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       {/* 3. วิชาเรียนของคุณ (Your Subjects) */}
       <div>
         <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <BookOpen className="text-blue-600" /> วิชาเรียนของคุณ
+            <BookOpen className="text-indigo-600" /> วิชาเรียนของคุณ
         </h3>
         
         {mySubjects.length === 0 ? (

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Question, Teacher, SubjectConfig } from '../types';
 import { ArrowLeft, Play, Layers, Shuffle, GraduationCap } from 'lucide-react';
@@ -72,8 +71,8 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
         image: q.image || '',
         choices: q.choices.map((c, cIdx) => ({
             id: String(c.id).trim() || `c${cIdx}`,
-            text: c.text,
-            image: c.image
+            text: c.text || '',
+            image: c.image || '' // Fix: Ensure undefined becomes empty string
         })),
         correctChoiceId: String(q.correctChoiceId).trim(),
         explanation: q.explanation || '',

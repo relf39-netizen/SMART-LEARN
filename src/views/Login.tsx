@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Student } from '../types';
-import { AlertCircle, GraduationCap } from 'lucide-react';
+import { AlertCircle, GraduationCap, School } from 'lucide-react';
 
 interface LoginProps {
   onLogin: (student: Student) => void;
@@ -52,10 +52,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, onTeacherLoginClick, students })
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[80vh] relative pb-10">
-      <div className="bg-white p-6 md:p-8 rounded-[32px] shadow-2xl w-full max-w-md border-4 border-blue-50 relative z-10">
+      <div className="bg-white p-6 md:p-8 rounded-[32px] shadow-2xl w-full max-w-md border-4 border-indigo-50 relative z-10">
+        
         <div className="text-center mb-6">
-          <h2 className="text-2xl font-bold text-blue-800 mb-2">เข้าสู่ระบบนักเรียน</h2>
-          <p className="text-gray-500">พิมพ์รหัสประจำตัว 5 หลัก</p>
+          <div className="inline-flex bg-indigo-100 p-4 rounded-full text-indigo-600 mb-3 shadow-sm">
+             <School size={40} />
+          </div>
+          <h2 className="text-2xl font-bold text-indigo-900 mb-1">LittleSchool LearnUp</h2>
+          <p className="text-gray-500 text-sm">พิมพ์รหัสประจำตัว 5 หลัก เพื่อเข้าเรียน</p>
         </div>
 
         <div className="bg-gray-50 rounded-2xl p-4 mb-6 h-24 flex items-center justify-center border border-gray-100">
@@ -80,12 +84,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, onTeacherLoginClick, students })
 
         <div className="grid grid-cols-3 gap-3 md:gap-4 mb-8">
           {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-            <button key={num} onClick={() => handleNumberClick(num.toString())} className="bg-white border-2 border-blue-100 shadow-[0_4px_0_0_rgba(219,234,254,1)] active:shadow-none active:translate-y-1 rounded-2xl p-3 md:p-4 text-2xl font-bold text-blue-600 hover:border-blue-300 transition-all">
+            <button key={num} onClick={() => handleNumberClick(num.toString())} className="bg-white border-2 border-indigo-100 shadow-[0_4px_0_0_rgba(224,231,255,1)] active:shadow-none active:translate-y-1 rounded-2xl p-3 md:p-4 text-2xl font-bold text-indigo-600 hover:border-indigo-300 transition-all">
               {num}
             </button>
           ))}
           <div className="col-span-1"></div>
-          <button onClick={() => handleNumberClick('0')} className="bg-white border-2 border-blue-100 shadow-[0_4px_0_0_rgba(219,234,254,1)] active:shadow-none active:translate-y-1 rounded-2xl p-3 md:p-4 text-2xl font-bold text-blue-600 hover:border-blue-300 transition-all">0</button>
+          <button onClick={() => handleNumberClick('0')} className="bg-white border-2 border-indigo-100 shadow-[0_4px_0_0_rgba(224,231,255,1)] active:shadow-none active:translate-y-1 rounded-2xl p-3 md:p-4 text-2xl font-bold text-indigo-600 hover:border-indigo-300 transition-all">0</button>
           <button onClick={handleBackspace} className="bg-red-50 border-2 border-red-100 shadow-[0_4px_0_0_rgba(254,226,226,1)] active:shadow-none active:translate-y-1 rounded-2xl p-3 md:p-4 text-xl font-bold text-red-500 hover:border-red-200 transition-all">⌫</button>
         </div>
         

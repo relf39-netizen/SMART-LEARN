@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Teacher } from '../types';
-import { ArrowLeft, GraduationCap, Lock } from 'lucide-react';
+import { ArrowLeft, GraduationCap, Lock, School } from 'lucide-react';
 import { teacherLogin } from '../services/api';
 
 interface TeacherLoginProps {
@@ -43,10 +43,10 @@ const TeacherLogin: React.FC<TeacherLoginProps> = ({ onLoginSuccess, onBack }) =
 
         <div className="text-center mb-8">
           <div className="bg-purple-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-purple-600">
-            <GraduationCap size={32} />
+            <School size={32} />
           </div>
-          <h2 className="text-2xl font-bold text-gray-800">ระบบจัดการคุณครู</h2>
-          <p className="text-gray-500 text-sm">เข้าสู่ระบบเพื่อจัดการข้อมูลนักเรียน</p>
+          <h2 className="text-2xl font-bold text-gray-800">LittleSchool Teacher</h2>
+          <p className="text-gray-500 text-sm">ระบบจัดการการเรียนรู้สำหรับคุณครู</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
