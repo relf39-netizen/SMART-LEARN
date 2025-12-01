@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Teacher, Student, Subject, Assignment, Question, SubjectConfig } from '../types';
 import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, Users, GraduationCap, Trash2, Edit, Shield, UserCog, KeyRound, Sparkles, Wand2, Key, HelpCircle, ChevronDown, ChevronUp, Layers, Clock, Library, Palette, Type, AlertCircle, ArrowRight, BrainCircuit, List, CheckSquare, Trophy, Lock, User, Activity } from 'lucide-react';
@@ -433,6 +434,35 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     }
   };
 
+  // --- AI ERROR HELPER ---
+  const handleAiError = (e: any) => {
+      console.error("AI Operation Error:", e);
+      
+      // Extract error message safely
+      let errorMessage = '';
+      if (typeof e === 'string') errorMessage = e;
+      else if (e?.message) errorMessage = e.message;
+      else errorMessage = JSON.stringify(e);
+
+      // Check for 429/Quota errors
+      if (errorMessage.includes('429') || 
+          errorMessage.includes('RESOURCE_EXHAUSTED') || 
+          errorMessage.includes('quota') ||
+          errorMessage.includes('rate limit')) {
+          
+          alert(
+              "⚠️ โควต้า API เต็ม (Error 429)\n\n" +
+              "Google แจ้งว่า API Key นี้ใช้งานเกินขีดจำกัดแล้ว\n\n" +
+              "วิธีแก้ไข:\n" +
+              "1. เปลี่ยนใช้ API Key อื่น (สมัครใหม่ฟรีที่ aistudio.google.com)\n" +
+              "2. หรือรอสักครู่ (หากเป็นการจำกัดรายนาที)\n" +
+              "3. ลดจำนวนข้อที่สร้างต่อครั้ง"
+          );
+      } else {
+          alert("เกิดข้อผิดพลาด: " + errorMessage);
+      }
+  };
+
   // --- Assignment Creation Logic ---
   const handleAssignGenerateQuestions = async () => {
       if (!geminiApiKey) return alert("กรุณาใส่ API Key ในหน้า 'คลังข้อสอบ > AI' ก่อน");
@@ -452,7 +482,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
              setNewlyGeneratedQuestions(prev => [...prev, ...generated]);
           }
       } catch (e) {
-          alert("เกิดข้อผิดพลาด: " + e);
+          handleAiError(e);
       } finally {
           setIsGeneratingAi(false);
       }
@@ -478,7 +508,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
              setNewlyGeneratedQuestions(prev => [...prev, ...generated]);
           }
       } catch (e) {
-          alert("เกิดข้อผิดพลาด: " + e);
+          handleAiError(e);
       } finally {
           setIsGeneratingAi(false);
       }
@@ -491,7 +521,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         setProcessingMessage(`กำลังบันทึกข้อสอบ ${newlyGeneratedQuestions.length} ข้อ...`);
         
         const tid = normalizeId(teacher.id);
-        let successCount = 0;
         
         for (const q of newlyGeneratedQuestions) {
             await addQuestion({
@@ -505,7 +534,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 school: teacher.school,
                 teacherId: tid
             });
-            successCount++;
         }
     }
 
@@ -630,7 +658,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
              setAiPreviewQuestions(prev => [...prev, ...generated]); // Append to list
           }
       } catch (e) {
-          alert("เกิดข้อผิดพลาดในการสร้างข้อสอบ: " + e);
+          handleAiError(e);
       } finally {
           setIsGeneratingAi(false);
       }
