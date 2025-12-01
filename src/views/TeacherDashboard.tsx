@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { Teacher, Student, Subject, Assignment, Question, SubjectConfig } from '../types';
-import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, Users, GraduationCap, Trash2, Edit, Shield, UserCog, KeyRound, Sparkles, Wand2, Key, HelpCircle, ChevronDown, ChevronUp, Layers, Clock, Library, Palette, Type, AlertCircle } from 'lucide-react';
+import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, Users, GraduationCap, Trash2, Edit, Shield, UserCog, KeyRound, Sparkles, Wand2, Key, HelpCircle, ChevronDown, ChevronUp, Layers, Clock, Library, Palette, Type, AlertCircle, ArrowRight, BrainCircuit, List, CheckSquare } from 'lucide-react';
 import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, editQuestion, manageTeacher, getAllTeachers, GOOGLE_SCRIPT_URL, deleteQuestion, deleteAssignment, getSubjects, addSubject, deleteSubject } from '../services/api';
 import { generateQuestionWithAI, GeneratedQuestion } from '../services/aiService';
 
@@ -43,11 +44,16 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [isSaving, setIsSaving] = useState(false);
 
   // Assignment Form
+  const [assignStep, setAssignStep] = useState<1 | 2>(1); // 1: Info, 2: AI Generation
   const [assignTitle, setAssignTitle] = useState('');
   const [assignSubject, setAssignSubject] = useState<string>(''); // Dynamic Subject
   const [assignGrade, setAssignGrade] = useState<string>(canManageAll ? 'ALL' : teacher.gradeLevel!); 
   const [assignCount, setAssignCount] = useState(10);
   const [assignDeadline, setAssignDeadline] = useState('');
+  
+  // Assignment AI State
+  const [newlyGeneratedQuestions, setNewlyGeneratedQuestions] = useState<GeneratedQuestion[]>([]);
+  const [assignAiTopic, setAssignAiTopic] = useState('');
 
   // Question Form
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
@@ -75,10 +81,11 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const ITEMS_PER_PAGE = 5;
 
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const [assignmentModalTab, setAssignmentModalTab] = useState<'status' | 'questions'>('status');
 
   const isAdmin = (teacher.role && teacher.role.toUpperCase() === 'ADMIN') || (teacher.username && teacher.username.toLowerCase() === 'admin');
   const GRADES = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'];
-  const GRADE_LABELS: Record<string, string> = { 'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6' };
+  const GRADE_LABELS: Record<string, string> = { 'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6', 'ALL': 'ทุกชั้น' };
 
   // Icon options for Subjects
   const SUBJECT_ICONS = [
@@ -151,6 +158,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     setLoading(false);
   };
 
+  // --- Handlers ---
+
   const handleAddSubject = async () => {
       if (!newSubjectName) return alert('กรุณากรอกชื่อวิชา');
       setIsProcessing(true);
@@ -206,27 +215,76 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     setIsSaving(false);
   };
 
-  const handleCreateAssignment = async () => {
-    if (!assignDeadline) return alert('กรุณาเลือกวันกำหนดส่ง');
-    if (!assignSubject) return alert('กรุณาเลือกวิชา');
-    // Title is optional, but good practice
-    const finalTitle = assignTitle || `การบ้าน ${assignSubject} ${formatDate(assignDeadline)}`;
+  // --- Assignment Creation Logic ---
+  const handleAssignGenerateQuestions = async () => {
+      if (!geminiApiKey) return alert("กรุณาใส่ API Key ในหน้า 'คลังข้อสอบ > AI' ก่อน");
+      if (!assignAiTopic) return alert("กรุณาระบุหัวข้อเรื่อง");
+      
+      setIsGeneratingAi(true);
+      try {
+          const generated = await generateQuestionWithAI(
+              assignSubject, 
+              assignGrade, 
+              assignAiTopic, 
+              geminiApiKey, 
+              5 // Generate 5 at a time
+          );
 
-    setIsProcessing(true);
-    setProcessingMessage('กำลังบันทึกการบ้าน...');
-    
+          if (generated) {
+             setNewlyGeneratedQuestions(prev => [...prev, ...generated]);
+          }
+      } catch (e) {
+          alert("เกิดข้อผิดพลาด: " + e);
+      } finally {
+          setIsGeneratingAi(false);
+      }
+  };
+
+  const handleFinalizeAssignment = async () => {
+    // 1. Save new questions
+    if (newlyGeneratedQuestions.length > 0) {
+        setIsProcessing(true);
+        setProcessingMessage(`กำลังบันทึกข้อสอบ ${newlyGeneratedQuestions.length} ข้อ...`);
+        
+        const tid = normalizeId(teacher.id);
+        let successCount = 0;
+        
+        for (const q of newlyGeneratedQuestions) {
+            await addQuestion({
+                subject: assignSubject,
+                grade: assignGrade,
+                text: q.text,
+                image: q.image || '',
+                c1: q.c1, c2: q.c2, c3: q.c3, c4: q.c4,
+                correct: q.correct,
+                explanation: q.explanation,
+                school: teacher.school,
+                teacherId: tid
+            });
+            successCount++;
+        }
+    }
+
+    // 2. Save Assignment
+    setProcessingMessage('กำลังสร้างการบ้าน...');
+    const finalTitle = assignTitle || `การบ้าน ${assignSubject}`;
     const success = await addAssignment(teacher.school, assignSubject, assignGrade, assignCount, assignDeadline, teacher.name, finalTitle);
+    
+    setIsProcessing(false);
     
     if (success) { 
         alert('✅ สั่งการบ้านเรียบร้อยแล้ว'); 
+        setAssignStep(1);
         setAssignDeadline(''); 
         setAssignTitle('');
+        setNewlyGeneratedQuestions([]);
+        setAssignAiTopic('');
         await loadData(); 
     } else { 
-        alert('เกิดข้อผิดพลาด'); 
+        alert('เกิดข้อผิดพลาดในการสร้างการบ้าน'); 
     }
-    setIsProcessing(false);
   };
+
 
   const handleDeleteAssignment = async (id: string) => {
     if (!confirm('ยืนยันลบการบ้านนี้?')) return;
@@ -237,6 +295,11 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         setAssignments(prev => prev.filter(a => a.id !== id));
         loadData();
     }
+  };
+
+  const handleViewAssignment = (a: Assignment) => {
+      setSelectedAssignment(a);
+      setAssignmentModalTab('status'); // Reset tab
   };
 
   const handleSaveQuestion = async () => {
@@ -298,7 +361,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   };
 
   // ----------------------------------------
-  // AI GENERATOR LOGIC
+  // AI GENERATOR LOGIC (Question Bank)
   // ----------------------------------------
 
   const handleAiGenerate = async () => {
@@ -384,11 +447,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const currentQuestions = filteredQuestions.slice((qBankPage - 1) * ITEMS_PER_PAGE, qBankPage * ITEMS_PER_PAGE);
   const myCreatedSubjects = availableSubjects.filter(s => s.teacherId === normalizeId(teacher.id));
 
-  const getQuestionCountForAssignment = () => {
-      if (!assignSubject) return 0;
-      return questions.filter(q => q.subject === assignSubject && (assignGrade === 'ALL' || q.grade === assignGrade)).length;
-  };
-
   const countSubmitted = (assignmentId: string) => {
       const submittedStudentIds = new Set(
         stats.filter(r => r.assignmentId === assignmentId).map(r => r.studentId)
@@ -396,7 +454,19 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       return submittedStudentIds.size;
   };
 
-  const currentAvailableQuestions = getQuestionCountForAssignment();
+  const getAssignmentQuestions = (assignment: Assignment) => {
+      let qList = questions.filter(q => 
+          (q.subject === assignment.subject) &&
+          (q.school === assignment.school || q.school === 'CENTER' || q.school === 'Admin')
+      );
+      
+      if (assignment.grade && assignment.grade !== 'ALL') {
+          qList = qList.filter(q => q.grade === assignment.grade || q.grade === 'ALL');
+      }
+
+      // Logic: Reverse to get newest, then slice by count
+      return [...qList].reverse().slice(0, assignment.questionCount);
+  };
 
   return (
     <div className="max-w-6xl mx-auto pb-20 relative">
@@ -407,18 +477,17 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         </div>
        )}
 
-      {/* AI Generator Modal */}
+      {/* AI Generator Modal (Question Bank Only) */}
       {showAiModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
                   <div className="p-6 border-b flex justify-between items-center bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-t-2xl">
-                      <h3 className="font-bold text-lg flex items-center gap-2"><Wand2 size={20}/> AI สร้างข้อสอบ ({aiSourceMode === 'assignment' ? 'สำหรับมอบหมายงาน' : 'สำหรับคลังข้อสอบ'})</h3>
+                      <h3 className="font-bold text-lg flex items-center gap-2"><Wand2 size={20}/> AI สร้างข้อสอบลงคลัง</h3>
                       <button onClick={() => setShowAiModal(false)} className="hover:bg-white/20 p-1 rounded"><X size={20}/></button>
                   </div>
                   <div className="p-6">
                       <div className="bg-purple-50 p-3 rounded-lg border border-purple-100 mb-4 text-sm text-purple-700">
-                          วิชา: <b>{aiSourceMode === 'assignment' ? assignSubject : qSubject}</b> | 
-                          ชั้น: <b>{GRADE_LABELS[aiSourceMode === 'assignment' ? assignGrade : qGrade] || (aiSourceMode === 'assignment' ? assignGrade : qGrade)}</b>
+                          วิชา: <b>{qSubject}</b> | ชั้น: <b>{GRADE_LABELS[qGrade] || qGrade}</b>
                       </div>
 
                       <div className="space-y-4">
@@ -434,7 +503,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                               <input type="text" value={aiTopic} onChange={(e) => setAiTopic(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="เช่น การบวกเลข, สัตว์เลี้ยงลูกด้วยนม..." />
                           </div>
                           <div>
-                             <label className="block text-sm font-bold text-gray-700 mb-1">จำนวนข้อต่อครั้ง (แนะนำ 5 ข้อ)</label>
+                             <label className="block text-sm font-bold text-gray-700 mb-1">จำนวนข้อต่อครั้ง</label>
                              <select value={aiCount} onChange={(e) => setAiCount(Number(e.target.value))} className="w-full p-2 border rounded-lg">
                                  <option value="1">1 ข้อ</option>
                                  <option value="3">3 ข้อ</option>
@@ -591,81 +660,144 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
               <div className="max-w-4xl mx-auto">
                  <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 mb-8 shadow-sm">
                     <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Calendar className="text-orange-500"/> สั่งงานใหม่</h4>
+                    
                     {availableSubjects.length === 0 ? (
                         <div className="text-red-500 text-center p-4 bg-red-50 rounded-xl border border-red-200 mb-4">
                             กรุณาไปที่เมนู "จัดการรายวิชา" เพื่อเพิ่มวิชาก่อนสั่งงาน
                         </div>
                     ) : (
-                    <div className="space-y-4">
-                        <div className="grid md:grid-cols-2 gap-4">
-                            <div className="md:col-span-2">
-                                <label className="text-xs font-bold text-gray-500 block mb-1">ชื่อหัวข้อการบ้าน</label>
-                                <div className="relative">
-                                    <Type className="absolute left-3 top-3 text-gray-400" size={18} />
-                                    <input 
-                                        type="text" 
-                                        value={assignTitle} 
-                                        onChange={e => setAssignTitle(e.target.value)} 
-                                        placeholder={`เช่น การบ้าน ${assignSubject || '...'} ประจำสัปดาห์`}
-                                        className="w-full pl-10 p-2.5 rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-orange-200 outline-none"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 block mb-1">วิชา</label>
-                                <select value={assignSubject} onChange={(e) => setAssignSubject(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 outline-none">
-                                    <option value="">-- เลือกวิชา --</option>
-                                    {availableSubjects.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 block mb-1">ระดับชั้น</label>
-                                {canManageAll ? (
-                                    <select value={assignGrade} onChange={(e) => setAssignGrade(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white outline-none">
-                                        <option value="ALL">ทุกชั้น</option>
-                                        {GRADES.map(g => <option key={g} value={g}>{GRADE_LABELS[g]}</option>)}
-                                    </select>
-                                ) : (
-                                    <div className="w-full p-2.5 rounded-lg border border-gray-200 bg-gray-100 text-gray-600 font-bold flex items-center">
-                                        {GRADE_LABELS[assignGrade] || assignGrade}
+                    <div>
+                        {/* Step 1: Assignment Details */}
+                        {assignStep === 1 && (
+                            <div className="space-y-4 animate-fade-in">
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    <div className="md:col-span-2">
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">ชื่อหัวข้อการบ้าน</label>
+                                        <input type="text" value={assignTitle} onChange={e => setAssignTitle(e.target.value)} placeholder={`เช่น การบ้าน ${assignSubject || '...'} ประจำสัปดาห์`} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-orange-200 outline-none"/>
                                     </div>
-                                )}
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 block mb-1">จำนวนข้อ</label>
-                                <input type="number" value={assignCount} onChange={(e) => setAssignCount(Number(e.target.value))} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white" min="5" max="50" />
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 block mb-1">ส่งภายใน</label>
-                                <input type="date" value={assignDeadline} onChange={(e) => setAssignDeadline(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white" />
-                            </div>
-                        </div>
-
-                        {/* Question Availability Check & AI Prompt */}
-                        {assignSubject && (
-                            <div className="bg-orange-100 p-4 rounded-xl border border-orange-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                                <div>
-                                    <div className="text-orange-800 font-bold text-sm">สถานะคลังข้อสอบ</div>
-                                    <div className="text-xs text-orange-700 mt-1">
-                                        มีข้อสอบวิชานี้: <span className="font-black text-lg">{currentAvailableQuestions}</span> ข้อ 
-                                        (ต้องการ {assignCount} ข้อ)
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">วิชา</label>
+                                        <select value={assignSubject} onChange={(e) => setAssignSubject(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 outline-none">
+                                            <option value="">-- เลือกวิชา --</option>
+                                            {availableSubjects.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                        </select>
                                     </div>
-                                    {currentAvailableQuestions < assignCount && (
-                                        <div className="text-red-500 text-xs font-bold mt-1 flex items-center gap-1"><AlertCircle size={12}/> ข้อสอบไม่พอ! กรุณาเพิ่มข้อสอบ</div>
-                                    )}
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">ระดับชั้น</label>
+                                        {canManageAll ? (
+                                            <select value={assignGrade} onChange={(e) => setAssignGrade(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white outline-none">
+                                                <option value="ALL">ทุกชั้น</option>
+                                                {GRADES.map(g => <option key={g} value={g}>{GRADE_LABELS[g]}</option>)}
+                                            </select>
+                                        ) : (
+                                            <div className="w-full p-2.5 rounded-lg border border-gray-200 bg-gray-100 text-gray-600 font-bold flex items-center">{GRADE_LABELS[assignGrade] || assignGrade}</div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">จำนวนข้อที่ต้องการ</label>
+                                        <input type="number" value={assignCount} onChange={(e) => setAssignCount(Number(e.target.value))} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white" min="5" max="50" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">ส่งภายใน</label>
+                                        <input type="date" value={assignDeadline} onChange={(e) => setAssignDeadline(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white" />
+                                    </div>
                                 </div>
-                                <button 
-                                    onClick={() => { setAiSourceMode('assignment'); setShowAiModal(true); setAiPreviewQuestions([]); }}
-                                    className="bg-white text-purple-600 border border-purple-200 px-4 py-2 rounded-lg font-bold text-sm shadow-sm hover:bg-purple-50 flex items-center gap-2"
-                                >
-                                    <Wand2 size={16}/> ใช้ AI สร้างข้อสอบเพิ่ม
-                                </button>
+                                <div className="pt-4 flex justify-end">
+                                    <button 
+                                        onClick={() => {
+                                            if (!assignSubject || !assignDeadline) return alert("กรุณากรอกข้อมูลให้ครบถ้วน");
+                                            setAssignStep(2);
+                                        }}
+                                        className="bg-orange-500 text-white px-6 py-2 rounded-xl font-bold hover:bg-orange-600 shadow-sm flex items-center gap-2"
+                                    >
+                                        ถัดไป: สร้างข้อสอบด้วย AI <ArrowRight size={18}/>
+                                    </button>
+                                </div>
                             </div>
                         )}
 
-                        <button onClick={handleCreateAssignment} disabled={isProcessing || !assignSubject} className="w-full bg-orange-500 text-white py-3 rounded-xl font-bold shadow hover:bg-orange-600 disabled:opacity-50 flex items-center justify-center gap-2 transition">
-                            {isProcessing ? 'บันทึก...' : <><Save size={18}/> ยืนยันสั่งงาน</>}
-                        </button>
+                        {/* Step 2: AI Generation */}
+                        {assignStep === 2 && (
+                            <div className="animate-fade-in space-y-4">
+                                <div className="bg-orange-100 p-4 rounded-xl border border-orange-200 text-orange-900 text-sm mb-4 flex justify-between items-center">
+                                    <span>สร้างข้อสอบสำหรับ: <b>{assignSubject}</b> ({assignCount} ข้อ)</span>
+                                    <button onClick={() => setAssignStep(1)} className="text-orange-700 underline text-xs">แก้ไขข้อมูล</button>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Google Gemini API Key</label>
+                                    <div className="flex gap-2">
+                                        <input type="password" value={geminiApiKey} onChange={(e) => { setGeminiApiKey(e.target.value); localStorage.setItem('gemini_api_key', e.target.value); }} className="flex-1 p-2 border rounded-lg text-sm bg-white" placeholder="วาง API Key ที่นี่..." />
+                                        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-100 rounded-lg text-gray-600 hover:bg-gray-200"><Key size={18}/></a>
+                                    </div>
+                                </div>
+
+                                <div className="p-4 bg-white border rounded-xl shadow-sm">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">หัวข้อเรื่องที่ต้องการ (Topic)</label>
+                                    <div className="flex gap-2 mb-2">
+                                        <input 
+                                            type="text" 
+                                            value={assignAiTopic} 
+                                            onChange={(e) => setAssignAiTopic(e.target.value)} 
+                                            placeholder="ระบุเรื่องที่ต้องการให้ AI สร้างโจทย์ เช่น การบวกเลข, คำราชาศัพท์"
+                                            className="flex-1 p-3 border rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-purple-200 outline-none"
+                                        />
+                                        <button 
+                                            onClick={handleAssignGenerateQuestions}
+                                            disabled={isGeneratingAi || !assignAiTopic}
+                                            className="bg-purple-600 text-white px-4 rounded-xl font-bold shadow-sm hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {isGeneratingAi ? <RefreshCw className="animate-spin" size={18}/> : <BrainCircuit size={18}/>}
+                                            สร้าง +5 ข้อ
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-gray-400">ระบบจะสร้างข้อสอบทีละ 5 ข้อ จนกว่าจะครบตามจำนวนที่ต้องการ</p>
+                                </div>
+
+                                {/* Generated List */}
+                                <div className="border rounded-xl overflow-hidden bg-white">
+                                    <div className="bg-gray-100 p-3 flex justify-between items-center">
+                                        <span className="font-bold text-gray-700 text-sm">รายการข้อสอบ ({newlyGeneratedQuestions.length}/{assignCount})</span>
+                                        {newlyGeneratedQuestions.length > 0 && <button onClick={() => setNewlyGeneratedQuestions([])} className="text-xs text-red-500 hover:underline">ล้างทั้งหมด</button>}
+                                    </div>
+                                    <div className="max-h-60 overflow-y-auto p-2 space-y-2">
+                                        {newlyGeneratedQuestions.length === 0 ? (
+                                            <div className="text-center py-8 text-gray-400 text-sm">ยังไม่มีข้อสอบ กด "สร้าง" เพื่อเริ่ม</div>
+                                        ) : (
+                                            newlyGeneratedQuestions.map((q, i) => (
+                                                <div key={i} className="p-3 border rounded-lg bg-gray-50 text-sm relative group">
+                                                    <div className="font-bold text-gray-800 pr-6">{i+1}. {q.text}</div>
+                                                    <div className="text-gray-500 text-xs mt-1">ตอบ: {q.correct} | {q.explanation}</div>
+                                                    <button 
+                                                        onClick={() => setNewlyGeneratedQuestions(prev => prev.filter((_, idx) => idx !== i))}
+                                                        className="absolute top-2 right-2 text-red-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"
+                                                    >
+                                                        <Trash2 size={16}/>
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                                
+                                {newlyGeneratedQuestions.length < assignCount && (
+                                    <div className="text-center text-xs text-orange-600 font-bold">
+                                        ⚠️ ยังขาดอีก {assignCount - newlyGeneratedQuestions.length} ข้อ
+                                    </div>
+                                )}
+
+                                <div className="flex gap-3 pt-4 border-t">
+                                    <button onClick={() => setAssignStep(1)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg">ย้อนกลับ</button>
+                                    <button 
+                                        onClick={handleFinalizeAssignment}
+                                        disabled={isProcessing || newlyGeneratedQuestions.length === 0}
+                                        className="flex-1 bg-green-500 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-green-600 disabled:opacity-50 disabled:bg-gray-300 flex justify-center items-center gap-2"
+                                    >
+                                        {isProcessing ? 'กำลังบันทึก...' : <><Save size={20}/> บันทึกการบ้าน</>}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                     )}
                  </div>
@@ -681,7 +813,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                      <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-gray-200">
                          <table className="w-full text-sm text-left">
                              <thead className="bg-orange-50 text-orange-900">
-                                 <tr><th className="p-3">หัวข้องาน</th><th className="p-3 text-center">วิชา</th><th className="p-3 text-center">ข้อ</th><th className="p-3">ส่งภายใน</th><th className="p-3 text-center">ส่งแล้ว</th><th className="p-3 text-right">จัดการ</th></tr>
+                                 <tr><th className="p-3">หัวข้อการบ้าน</th><th className="p-3 text-center">วิชา (ชั้น)</th><th className="p-3 text-center">จำนวนข้อ</th><th className="p-3">ส่งภายใน</th><th className="p-3 text-center">ส่งแล้ว</th><th className="p-3 text-right">จัดการ</th></tr>
                              </thead>
                              <tbody>
                                  {assignments.slice().reverse().map((a) => {
@@ -690,10 +822,12 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                      return (
                                          <tr key={a.id} className="border-b hover:bg-gray-50 last:border-0 transition-colors">
                                              <td className="p-3 font-bold text-gray-900">
-                                                 {a.title || '-'} 
-                                                 {a.grade && a.grade !== 'ALL' && <span className="ml-2 text-[10px] bg-gray-100 px-1.5 py-0.5 rounded border border-gray-300 text-gray-500">{GRADE_LABELS[a.grade]}</span>}
+                                                 {a.title || a.subject} 
                                              </td>
-                                             <td className="p-3 text-center text-gray-600">{a.subject}</td>
+                                             <td className="p-3 text-center text-gray-600">
+                                                 {a.subject}
+                                                 {a.grade && a.grade !== 'ALL' && <div className="text-[10px] text-gray-400">{GRADE_LABELS[a.grade] || a.grade}</div>}
+                                             </td>
                                              <td className="p-3 text-center font-mono">{a.questionCount}</td>
                                              <td className={`p-3 font-medium ${isExpired ? 'text-red-600' : 'text-gray-900'}`}>
                                                  {formatDate(a.deadline)}
@@ -704,7 +838,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                                  </span>
                                              </td>
                                              <td className="p-3 text-right flex justify-end gap-2">
-                                                 <button onClick={() => setSelectedAssignment(a)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded"><Eye size={16} /></button>
+                                                 <button onClick={() => handleViewAssignment(a)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded"><Eye size={16} /></button>
                                                  <button onClick={() => handleDeleteAssignment(a.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16}/></button>
                                              </td>
                                          </tr>
@@ -908,10 +1042,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         </div>
       )}
       
-      {/* Modal for viewing assignment details - kept same but hidden for brevity if not needed */}
+      {/* Modal for viewing assignment details */}
       {selectedAssignment && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col animate-fade-in overflow-hidden">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-fade-in overflow-hidden">
                   <div className="p-4 border-b flex justify-between items-center bg-gray-50">
                       <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2"><Calendar size={20} className="text-blue-600"/> รายละเอียดการส่งงาน</h3>
                       <button onClick={() => setSelectedAssignment(null)} className="text-gray-400 hover:text-red-500 transition"><X size={24}/></button>
@@ -920,12 +1054,91 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                       <div className="font-bold text-blue-900 text-lg">{selectedAssignment.title || selectedAssignment.subject}</div>
                       <div className="text-sm text-blue-700 mt-1 flex gap-4">
                           <span>วิชา: <b>{selectedAssignment.subject}</b></span>
-                          <span>กำหนดส่ง: <b>{selectedAssignment.deadline}</b></span>
+                          <span>ข้อสอบ: <b>{selectedAssignment.questionCount} ข้อ</b></span>
+                          <span>กำหนดส่ง: <b>{formatDate(selectedAssignment.deadline)}</b></span>
                       </div>
                   </div>
-                  <div className="overflow-y-auto p-4 flex-1">
-                      {/* ... Table logic ... */}
-                      <div className="text-center text-gray-400 py-10">แสดงรายชื่อผู้ส่งงาน (Implementation hidden for brevity)</div>
+
+                  {/* TABS */}
+                  <div className="flex border-b">
+                     <button 
+                        onClick={() => setAssignmentModalTab('status')} 
+                        className={`flex-1 py-3 font-bold text-sm flex items-center justify-center gap-2 ${assignmentModalTab === 'status' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-gray-500 hover:bg-gray-50'}`}
+                     >
+                        <Users size={16}/> สถานะการส่ง
+                     </button>
+                     <button 
+                        onClick={() => setAssignmentModalTab('questions')} 
+                        className={`flex-1 py-3 font-bold text-sm flex items-center justify-center gap-2 ${assignmentModalTab === 'questions' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-gray-500 hover:bg-gray-50'}`}
+                     >
+                        <List size={16}/> ข้อสอบที่ใช้
+                     </button>
+                  </div>
+
+                  <div className="overflow-y-auto p-4 flex-1 bg-gray-50">
+                      
+                      {/* STATUS TAB */}
+                      {assignmentModalTab === 'status' && (
+                          students.length === 0 ? <div className="text-center py-10 text-gray-400">ไม่มีนักเรียนในโรงเรียนนี้</div> : (
+                          <table className="w-full text-sm text-left bg-white rounded-xl shadow-sm">
+                              <thead>
+                                  <tr className="text-gray-600 border-b bg-gray-100"><th className="p-3 rounded-tl-xl">ชื่อนักเรียน</th><th className="p-3 text-center">สถานะ</th><th className="p-3 text-right">คะแนน</th><th className="p-3 text-right rounded-tr-xl">เวลาที่ส่ง</th></tr>
+                              </thead>
+                              <tbody>
+                                  {students.map(s => {
+                                      // หาผลสอบของการบ้านชิ้นนี้ (เอาล่าสุด)
+                                      const result = stats.filter(r => r.assignmentId === selectedAssignment.id && String(r.studentId) === String(s.id)).pop();
+                                      return (
+                                          <tr key={s.id} className="border-b last:border-0 hover:bg-gray-50">
+                                              <td className="p-3 font-bold text-gray-800 flex items-center gap-2">
+                                                  <span className="text-xl">{s.avatar}</span> {s.name}
+                                              </td>
+                                              <td className="p-3 text-center">
+                                                  {result ? <span className="text-green-700 bg-green-100 px-2 py-1 rounded text-xs font-bold flex items-center justify-center gap-1 w-fit mx-auto border border-green-200"><CheckCircle size={12}/> ส่งแล้ว</span> : <span className="text-gray-500 flex items-center justify-center gap-1 text-xs"><Clock size={12}/> ยังไม่ส่ง</span>}
+                                              </td>
+                                              <td className="p-3 text-right font-bold text-blue-700">{result ? <span className="text-lg">{result.score}</span> : '-'}</td>
+                                              <td className="p-3 text-right text-gray-600 text-xs">
+                                                  {result ? new Date(result.timestamp).toLocaleString('th-TH') : '-'}
+                                              </td>
+                                          </tr>
+                                      );
+                                  })}
+                              </tbody>
+                          </table>
+                          )
+                      )}
+
+                      {/* QUESTIONS TAB */}
+                      {assignmentModalTab === 'questions' && (
+                          <div className="space-y-3">
+                              {getAssignmentQuestions(selectedAssignment).map((q, idx) => (
+                                  <div key={q.id || idx} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                      <div className="flex gap-3">
+                                          <div className="bg-blue-100 text-blue-700 font-bold w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm">
+                                              {idx + 1}
+                                          </div>
+                                          <div className="flex-1">
+                                              <div className="font-bold text-gray-800 mb-2">{q.text}</div>
+                                              {q.image && <img src={q.image} className="h-20 object-contain mb-2 rounded bg-gray-50 border"/>}
+                                              <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 mb-2">
+                                                  {q.choices.map((c, i) => (
+                                                      <div key={i} className={`p-2 rounded border ${String(i+1) === String(q.correctChoiceId) ? 'bg-green-50 border-green-200 text-green-700 font-bold' : 'bg-gray-50 border-gray-100'}`}>
+                                                          {['ก','ข','ค','ง'][i]}. {c.text}
+                                                      </div>
+                                                  ))}
+                                              </div>
+                                              <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded">
+                                                  <span className="font-bold">เฉลย:</span> {q.explanation || '-'}
+                                              </div>
+                                          </div>
+                                      </div>
+                                  </div>
+                              ))}
+                              {getAssignmentQuestions(selectedAssignment).length === 0 && (
+                                  <div className="text-center text-gray-400 py-10">ไม่พบข้อมูลข้อสอบ</div>
+                              )}
+                          </div>
+                      )}
                   </div>
               </div>
           </div>

@@ -1,26 +1,35 @@
 
 import React, { useState } from 'react';
-import { BookOpen, Gamepad2, BarChart3, Star, Calendar, CheckCircle, AlertCircle, History, ArrowLeft, Clock } from 'lucide-react';
-import { Student, Assignment, ExamResult } from '../types';
+import { BookOpen, Gamepad2, BarChart3, Star, Calendar, CheckCircle, History, ArrowLeft, Users, Calculator, FlaskConical, Languages, Sparkles } from 'lucide-react';
+import { Student, Assignment, ExamResult, SubjectConfig } from '../types';
 
 interface DashboardProps {
   student: Student;
   assignments?: Assignment[]; 
   examResults?: ExamResult[]; 
+  subjects?: SubjectConfig[]; // ✅ รับค่ารายวิชาแบบ Dynamic
   onNavigate: (page: string) => void;
   onStartAssignment?: (assignment: Assignment) => void;
+  onSelectSubject?: (subjectName: string) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examResults = [], onNavigate, onStartAssignment }) => {
+const Dashboard: React.FC<DashboardProps> = ({ 
+  student, 
+  assignments = [], 
+  examResults = [], 
+  subjects = [], 
+  onNavigate, 
+  onStartAssignment,
+  onSelectSubject 
+}) => {
   // state สำหรับสลับหน้าระหว่าง 'main' (หน้าหลัก) กับ 'history' (ประวัติ)
   const [view, setView] = useState<'main' | 'history'>('main');
 
-  // กรองข้อมูล (โรงเรียนตรงกัน + ระดับชั้นตรงกัน)
-  const myAssignments = assignments.filter(a => {
-      // 1. เช็คโรงเรียน
-      if (a.school !== student.school) return false;
+  const GRADE_LABELS: Record<string, string> = { 'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6', 'ALL': 'ทุกชั้น' };
 
-      // 2. เช็คระดับชั้น (ถ้าการบ้านระบุชั้น และไม่ตรงกับนักเรียน ให้ซ่อน)
+  // กรองข้อมูลการบ้าน
+  const myAssignments = assignments.filter(a => {
+      if (a.school !== student.school) return false;
       if (a.grade && a.grade !== 'ALL' && student.grade) {
           if (a.grade !== student.grade) return false;
       }
@@ -38,16 +47,29 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
       return (resultB?.timestamp || 0) - (resultA?.timestamp || 0);
   });
 
-  // ✅ Helper Function: แปลงวันที่เป็นไทย
+  // ✅ กรองรายวิชาเฉพาะของชั้นตัวเอง
+  const mySubjects = subjects.filter(s => s.grade === 'ALL' || s.grade === student.grade);
+
   const formatDate = (dateString: string) => {
     if (!dateString) return '-';
     const date = new Date(dateString);
     return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
   };
   
-  const GRADE_LABELS: Record<string, string> = { 'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6' };
+  // Helper for Icons
+  const getIcon = (iconName: string, size = 32) => {
+      switch(iconName) {
+          case 'Book': return <BookOpen size={size} />;
+          case 'Calculator': return <Calculator size={size} />;
+          case 'FlaskConical': return <FlaskConical size={size} />;
+          case 'Languages': return <Languages size={size} />;
+          case 'Globe': return <Users size={size} />;
+          case 'Computer': return <Gamepad2 size={size} />;
+          default: return <Sparkles size={size} />;
+      }
+  };
 
-  // --- ส่วนแสดงผลหน้ารายละเอียดประวัติ ---
+  // --- ส่วนแสดงผลหน้าประวัติการส่งงาน ---
   if (view === 'history') {
     return (
       <div className="space-y-6 pb-20 animate-fade-in">
@@ -56,12 +78,12 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
         </button>
 
         <div className="flex items-center gap-3 mb-6">
-          <div className="bg-blue-100 p-3 rounded-2xl text-blue-600">
+          <div className="bg-yellow-100 p-3 rounded-2xl text-yellow-600">
             <History size={32} />
           </div>
           <div>
             <h2 className="text-2xl font-bold text-gray-800">ประวัติการส่งงาน</h2>
-            <p className="text-gray-500">รายการการบ้านที่ทำเสร็จแล้ว ({finishedAssignments.length} รายการ)</p>
+            <p className="text-gray-500">รายการที่ทำเสร็จแล้ว ({finishedAssignments.length} รายการ)</p>
           </div>
         </div>
 
@@ -74,14 +96,11 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                    <div>
                      <div className="flex items-center gap-2 mb-1">
                         <span className="bg-blue-50 text-blue-600 text-xs font-bold px-2 py-1 rounded-lg">{hw.subject}</span>
-                        {hw.grade && hw.grade !== 'ALL' && <span className="bg-purple-100 text-purple-600 text-xs font-bold px-2 py-1 rounded-lg">{GRADE_LABELS[hw.grade] || hw.grade}</span>}
                         <span className="text-xs text-gray-400">{new Date(result?.timestamp || 0).toLocaleString('th-TH')}</span>
                      </div>
                      <div className="font-bold text-gray-800 text-lg">
-                        {hw.title || `การบ้าน ${hw.subject}`} ({hw.questionCount} ข้อ)
+                        {hw.title || hw.subject}
                      </div>
-                     <div className="text-sm text-gray-500">กำหนดส่งเดิม: {formatDate(hw.deadline)}</div>
-                     {hw.createdBy && <div className="text-xs text-purple-600 mt-1">ตรวจโดย: ครู{hw.createdBy}</div>}
                    </div>
                    
                    <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end bg-gray-50 p-3 rounded-xl sm:bg-transparent sm:p-0">
@@ -111,30 +130,30 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
 
   // --- ส่วนแสดงผลหน้าหลัก (Dashboard) ---
   return (
-    <div className="space-y-6 pb-20">
-      {/* Welcome Banner */}
+    <div className="space-y-8 pb-20">
+      {/* 1. Welcome Banner */}
       <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
         <div className="absolute top-0 right-0 opacity-10 transform translate-x-10 -translate-y-10"><Star size={150} /></div>
         <div className="relative z-10 flex items-center gap-4">
           <div className="text-5xl bg-white/20 p-3 rounded-full backdrop-blur-sm shadow-inner">{student.avatar}</div>
           <div>
             <h2 className="text-2xl font-bold mb-1">สวัสดี, {student.name.split(' ')[0]}!</h2>
-            <div className="flex gap-2 text-blue-100 items-center">
+            <div className="flex gap-2 text-blue-100 items-center text-sm">
                 <span>ชั้น {GRADE_LABELS[student.grade || 'P6'] || student.grade}</span>
                 <span>•</span>
-                <span>{student.school || 'โรงเรียนคุณภาพ'}</span>
+                <span>{student.school}</span>
             </div>
-            <div className="flex items-center gap-2 mt-2 bg-black/20 w-fit px-3 py-1 rounded-full"><Star className="text-yellow-300 fill-yellow-300" size={16} /><span className="font-bold">{student.stars} คะแนนสะสม</span></div>
+            <div className="flex items-center gap-2 mt-2 bg-black/20 w-fit px-3 py-1 rounded-full"><Star className="text-yellow-300 fill-yellow-300" size={16} /><span className="font-bold">{student.stars} ดาว</span></div>
           </div>
         </div>
       </div>
 
-      {/* 📝 กล่องการบ้านที่ต้องทำ (Pending) */}
+      {/* 2. การบ้าน (Pending Assignments) */}
       {pendingAssignments.length > 0 ? (
         <div className="bg-white border-l-4 border-orange-500 rounded-2xl p-6 shadow-md animate-fade-in">
             <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <div className="bg-orange-100 p-2 rounded-lg text-orange-600"><Calendar size={20} /></div>
-                การบ้านที่ต้องทำ ({pendingAssignments.length})
+                ภารกิจที่ต้องทำ ({pendingAssignments.length})
             </h3>
             <div className="space-y-3">
                 {pendingAssignments.map(hw => {
@@ -145,10 +164,9 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
                                 <div className="font-bold text-gray-800 text-lg flex items-center gap-2">
                                   {hw.title || hw.subject} 
                                   {isExpired && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full border border-red-200">เลยกำหนด</span>}
-                                  {hw.grade && hw.grade !== 'ALL' && <span className="text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full border border-purple-200">{GRADE_LABELS[hw.grade] || hw.grade}</span>}
                                 </div>
                                 <div className={`text-sm ${isExpired ? 'text-red-500 font-medium' : 'text-gray-600'}`}>
-                                  วิชา: {hw.subject} • {hw.questionCount} ข้อ • ส่งภายใน {formatDate(hw.deadline)}
+                                  {hw.questionCount} ข้อ • ส่งภายใน {formatDate(hw.deadline)}
                                 </div>
                                 {hw.createdBy && (
                                    <div className="text-xs text-purple-600 mt-1 font-medium bg-purple-50 px-2 py-0.5 rounded w-fit">
@@ -171,41 +189,79 @@ const Dashboard: React.FC<DashboardProps> = ({ student, assignments = [], examRe
             </div>
         </div>
       ) : (
-        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center justify-center gap-2 text-green-700">
-           <CheckCircle size={20} /> เยี่ยมมาก! คุณไม่มีการบ้านค้าง
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center justify-center gap-2 text-green-700 shadow-sm">
+           <CheckCircle size={20} /> เยี่ยมมาก! คุณส่งงานครบทุกชิ้นแล้ว
         </div>
       )}
 
-      {/* Grid เมนูหลัก */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* 3. วิชาเรียนของคุณ (Your Subjects) */}
+      <div>
+        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <BookOpen className="text-blue-600" /> วิชาเรียนของคุณ
+        </h3>
         
-        {/* ปุ่มฝึกทำข้อสอบ */}
-        <button onClick={() => onNavigate('select-subject')} className="group relative bg-white rounded-3xl p-6 shadow-md hover:shadow-xl transition-all border-b-4 border-blue-100 hover:border-blue-500 hover:-translate-y-1 text-left">
-          <div className="bg-blue-100 w-14 h-14 rounded-2xl flex items-center justify-center text-blue-600 mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors"><BookOpen size={32} /></div>
-          <h3 className="text-xl font-bold text-gray-800 mb-2">ฝึกทำข้อสอบ</h3>
-          <p className="text-gray-500 text-sm">ฝึกฝนวิชาคณิตศาสตร์ ภาษาไทย วิทยาศาสตร์ และภาษาอังกฤษ</p>
-        </button>
-
-        {/* ปุ่มเกมแข่งขัน */}
-        <button onClick={() => onNavigate('game')} className="group relative bg-white rounded-3xl p-6 shadow-md hover:shadow-xl transition-all border-b-4 border-purple-100 hover:border-purple-500 hover:-translate-y-1 text-left">
-          <div className="bg-purple-100 w-14 h-14 rounded-2xl flex items-center justify-center text-purple-600 mb-4 group-hover:bg-purple-600 group-hover:text-white transition-colors"><Gamepad2 size={32} /></div>
-          <h3 className="text-xl font-bold text-gray-800 mb-2">เกมแข่งขัน</h3>
-          <p className="text-gray-500 text-sm">ประลองความเร็วกับเพื่อนๆ ในห้อง แบบเรียลไทม์</p>
-          <div className="absolute top-6 right-6 flex gap-1"><span className="flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span><span className="text-green-600 text-xs font-bold">LIVE</span></div>
-        </button>
-
-        {/* ปุ่มดูประวัติการส่งงาน (ใหม่) */}
-        <button onClick={() => setView('history')} className="group bg-white rounded-3xl p-6 shadow-md hover:shadow-xl transition-all border-b-4 border-yellow-100 hover:border-yellow-500 hover:-translate-y-1 flex items-center gap-4">
-          <div className="bg-yellow-100 w-12 h-12 rounded-2xl flex items-center justify-center text-yellow-600 group-hover:bg-yellow-600 group-hover:text-white transition-colors"><History size={24} /></div>
-          <div><h3 className="text-lg font-bold text-gray-800">ประวัติการส่งงาน</h3><p className="text-gray-500 text-sm">ดูรายการการบ้านที่ทำเสร็จแล้ว ({finishedAssignments.length})</p></div>
-        </button>
-
-        {/* ปุ่มดูสถิติ */}
-        <button onClick={() => onNavigate('stats')} className="group bg-white rounded-3xl p-6 shadow-md hover:shadow-xl transition-all border-b-4 border-green-100 hover:border-green-500 hover:-translate-y-1 flex items-center gap-4">
-          <div className="bg-green-100 w-12 h-12 rounded-2xl flex items-center justify-center text-green-600 group-hover:bg-green-600 group-hover:text-white transition-colors"><BarChart3 size={24} /></div>
-          <div><h3 className="text-lg font-bold text-gray-800">ดูสถิติผลการเรียน</h3><p className="text-gray-500 text-sm">เช็คพัฒนาการและจุดที่ต้องปรับปรุง</p></div>
-        </button>
+        {mySubjects.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-3xl border-2 border-dashed border-gray-200 text-gray-400">
+                <div className="bg-gray-100 p-4 rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-3">
+                    <BookOpen size={40} className="text-gray-300"/>
+                </div>
+                <p>ยังไม่มีรายวิชาสำหรับระดับชั้น {GRADE_LABELS[student.grade || 'P6'] || student.grade}</p>
+                <p className="text-sm mt-1">รอคุณครูเพิ่มรายวิชาเข้าสู่ระบบ</p>
+            </div>
+        ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {mySubjects.map((sub) => (
+                    <button 
+                        key={sub.id}
+                        onClick={() => onSelectSubject && onSelectSubject(sub.name)}
+                        className={`group relative p-6 rounded-3xl border-2 text-left transition-all hover:-translate-y-1 hover:shadow-lg flex flex-col items-start gap-4 ${sub.color || 'bg-white border-gray-100'}`}
+                    >
+                        <div className="bg-white/80 p-3 rounded-2xl shadow-sm backdrop-blur-sm">
+                            {getIcon(sub.icon, 32)}
+                        </div>
+                        <div>
+                            <h4 className="font-bold text-lg text-gray-800 group-hover:text-blue-700 transition-colors">{sub.name}</h4>
+                            <p className="text-xs opacity-70 font-medium mt-1">คลิกเพื่อฝึกฝน</p>
+                        </div>
+                        <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="bg-white/90 px-3 py-1 rounded-full text-xs font-bold shadow-sm text-blue-600">
+                                เริ่มเลย
+                            </div>
+                        </div>
+                    </button>
+                ))}
+            </div>
+        )}
       </div>
+
+      {/* 4. เมนูอื่นๆ (Menu) - ปรับปรุงให้สอดคล้องกัน */}
+      <div>
+        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <Sparkles className="text-yellow-500" /> เมนูเพิ่มเติม
+        </h3>
+        <div className="grid grid-cols-3 gap-4">
+            
+            {/* ปุ่มเกมแข่งขัน */}
+            <button onClick={() => onNavigate('game')} className="group bg-white rounded-3xl p-4 shadow-sm hover:shadow-lg transition-all border-b-4 border-purple-100 hover:border-purple-500 hover:-translate-y-1 flex flex-col items-center justify-center gap-2 text-center h-32">
+                <div className="bg-purple-100 p-3 rounded-full text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors"><Gamepad2 size={28} /></div>
+                <span className="font-bold text-gray-700 text-sm">เกมแข่งขัน</span>
+            </button>
+
+            {/* ปุ่มประวัติ */}
+            <button onClick={() => setView('history')} className="group bg-white rounded-3xl p-4 shadow-sm hover:shadow-lg transition-all border-b-4 border-yellow-100 hover:border-yellow-500 hover:-translate-y-1 flex flex-col items-center justify-center gap-2 text-center h-32">
+                <div className="bg-yellow-100 p-3 rounded-full text-yellow-600 group-hover:bg-yellow-600 group-hover:text-white transition-colors"><History size={28} /></div>
+                <span className="font-bold text-gray-700 text-sm">ประวัติส่งงาน</span>
+            </button>
+
+            {/* ปุ่มสถิติ */}
+            <button onClick={() => onNavigate('stats')} className="group bg-white rounded-3xl p-4 shadow-sm hover:shadow-lg transition-all border-b-4 border-green-100 hover:border-green-500 hover:-translate-y-1 flex flex-col items-center justify-center gap-2 text-center h-32">
+                <div className="bg-green-100 p-3 rounded-full text-green-600 group-hover:bg-green-600 group-hover:text-white transition-colors"><BarChart3 size={28} /></div>
+                <span className="font-bold text-gray-700 text-sm">สถิติการเรียน</span>
+            </button>
+
+        </div>
+      </div>
+
     </div>
   );
 };

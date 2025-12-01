@@ -11,8 +11,8 @@ import GameMode from './views/GameMode';
 import GameSetup from './views/GameSetup';
 import Results from './views/Results';
 import Stats from './views/Stats';
-import { Student, Question, Teacher, Subject, ExamResult, Assignment } from './types';
-import { fetchAppData, saveScore } from './services/api';
+import { Student, Question, Teacher, Subject, ExamResult, Assignment, SubjectConfig } from './types';
+import { fetchAppData, saveScore, getSubjects } from './services/api';
 import { Loader2 } from 'lucide-react';
 import { MOCK_STUDENTS, MOCK_QUESTIONS } from './constants';
 
@@ -34,12 +34,12 @@ const App: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [examResults, setExamResults] = useState<ExamResult[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [subjects, setSubjects] = useState<SubjectConfig[]>([]); // ✅ Store dynamic subjects
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
     const initData = async () => {
-      console.log("System Starting...");
       const safetyTimer = setTimeout(() => {
         if (isMounted && isLoading) {
           console.warn("Loading taking too long, switching to fallback data...");
@@ -77,7 +77,18 @@ const App: React.FC = () => {
     return () => { isMounted = false; };
   }, []);
 
-  const handleLogin = (student: Student) => { setCurrentUser(student); setCurrentPage('dashboard'); };
+  const handleLogin = async (student: Student) => { 
+    setCurrentUser(student); 
+    // ✅ Fetch subjects for this student's school upon login
+    try {
+      const schoolSubjects = await getSubjects(student.school || 'โรงเรียนคุณภาพ');
+      setSubjects(schoolSubjects);
+    } catch (e) {
+      console.error("Failed to load subjects", e);
+    }
+    setCurrentPage('dashboard'); 
+  };
+
   const handleTeacherLoginSuccess = (teacher: Teacher) => { setCurrentTeacher(teacher); setCurrentPage('teacher-dashboard'); };
   const handleLogout = () => { 
       setCurrentUser(null); 
@@ -86,6 +97,7 @@ const App: React.FC = () => {
       setSelectedSubject(null); 
       setCurrentAssignment(null);
       setGameRoomCode(''); 
+      setSubjects([]);
   };
 
   const handleFinishExam = async (score: number, total: number, source: 'practice' | 'game' = 'practice') => {
@@ -131,8 +143,17 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSelectSubject = (subject: Subject) => { setSelectedSubject(subject); setCurrentAssignment(null); setCurrentPage('practice'); };
-  const handleStartAssignment = (assignment: Assignment) => { setCurrentAssignment(assignment); setSelectedSubject(assignment.subject); setCurrentPage('practice'); };
+  const handleSelectSubject = (subject: Subject) => { 
+    setSelectedSubject(subject); 
+    setCurrentAssignment(null); 
+    setCurrentPage('practice'); 
+  };
+  
+  const handleStartAssignment = (assignment: Assignment) => { 
+    setCurrentAssignment(assignment); 
+    setSelectedSubject(assignment.subject); 
+    setCurrentPage('practice'); 
+  };
 
   // ✅ เมื่อครูสร้างห้องเสร็จ
   const handleGameCreated = (roomCode: string) => {
@@ -165,7 +186,16 @@ const App: React.FC = () => {
     <Layout studentName={currentUser?.name} onLogout={handleLogout} isMusicOn={isMusicOn} toggleMusic={() => setIsMusicOn(!isMusicOn)} currentPage={currentPage} onNavigate={setCurrentPage}>
       {(() => {
         switch (currentPage) {
-          case 'dashboard': return <Dashboard student={currentUser!} assignments={assignments} examResults={examResults} onNavigate={setCurrentPage} onStartAssignment={handleStartAssignment} />;
+          case 'dashboard': 
+            return <Dashboard 
+              student={currentUser!} 
+              assignments={assignments} 
+              examResults={examResults} 
+              subjects={subjects} 
+              onNavigate={setCurrentPage} 
+              onStartAssignment={handleStartAssignment}
+              onSelectSubject={handleSelectSubject} 
+            />;
           case 'select-subject': return <SubjectSelection onSelectSubject={handleSelectSubject} onBack={() => setCurrentPage('dashboard')} />;
           case 'practice':
             let qList = questions;
@@ -177,12 +207,19 @@ const App: React.FC = () => {
                 );
             }
             const activeSubject = currentAssignment ? currentAssignment.subject : selectedSubject;
-            if (activeSubject) qList = qList.filter(q => q.subject === activeSubject);
-            if (currentAssignment && currentAssignment.questionCount < qList.length) qList = qList.slice(0, currentAssignment.questionCount);
+            
+            if (activeSubject) {
+                qList = qList.filter(q => q.subject === activeSubject);
+            }
+
+            // ✅ LOGIC CHANGE: ถ้าเป็นการบ้าน ให้เอาข้อสอบล่าสุด (เพราะเพิ่งถูก Generate มา)
+            if (currentAssignment) {
+                qList = [...qList].reverse().slice(0, currentAssignment.questionCount);
+            }
+
             return <PracticeMode questions={qList} onFinish={(s, t) => handleFinishExam(s, t, 'practice')} onBack={() => setCurrentPage('dashboard')} />;
           
           case 'game': 
-            // ✅ นักเรียนต้องกรอกรหัสเอง ไม่ส่ง initialRoomCode
             return (
                 <GameMode 
                     student={currentUser!} 
@@ -191,9 +228,15 @@ const App: React.FC = () => {
                 />
             );
           
-          case 'results': return <Results score={lastScore?.score || 0} total={lastScore?.total || 0} isHomework={lastScore?.isHomework} isGame={lastScore?.isGame} onRetry={() => setCurrentPage('select-subject')} onHome={() => setCurrentPage('dashboard')} />;
-          case 'stats': return <Stats examResults={examResults} studentId={currentUser!.id} onBack={() => setCurrentPage('dashboard')} />;
-          default: return <Dashboard student={currentUser!} onNavigate={setCurrentPage} />;
+          case 'results': return <Results score={lastScore?.score || 0} total={lastScore?.total || 0} isHomework={lastScore?.isHomework} isGame={lastScore?.isGame} onRetry={() => setCurrentPage('dashboard')} onHome={() => setCurrentPage('dashboard')} />;
+          case 'stats': 
+            return <Stats 
+              examResults={examResults} 
+              studentId={currentUser!.id} 
+              subjects={subjects} // ✅ Pass subjects to Stats
+              onBack={() => setCurrentPage('dashboard')} 
+            />;
+          default: return <Dashboard student={currentUser!} onNavigate={setCurrentPage} subjects={subjects} onSelectSubject={handleSelectSubject} />;
         }
       })()}
     </Layout>

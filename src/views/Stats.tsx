@@ -2,30 +2,55 @@
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { ArrowLeft, Trophy, AlertCircle, Activity } from 'lucide-react';
-import { ExamResult } from '../types';
+import { ExamResult, SubjectConfig } from '../types';
 
 interface StatsProps {
   examResults: ExamResult[];
   studentId: string;
+  subjects?: SubjectConfig[]; // ✅ Receive dynamic subjects
   onBack: () => void;
 }
 
-const Stats: React.FC<StatsProps> = ({ examResults, studentId, onBack }) => {
+const Stats: React.FC<StatsProps> = ({ examResults, studentId, subjects = [], onBack }) => {
   
+  // Helper to extract hex color or Tailwind class approximation for the Chart
+  const getSubjectColor = (subjectName: string) => {
+      // 1. Try to find match in dynamic subjects
+      const found = subjects.find(s => s.name === subjectName);
+      if (found) {
+          if (found.color.includes('red')) return '#ef4444';
+          if (found.color.includes('blue')) return '#3b82f6';
+          if (found.color.includes('green')) return '#22c55e';
+          if (found.color.includes('yellow')) return '#eab308';
+          if (found.color.includes('purple')) return '#a855f7';
+          if (found.color.includes('pink')) return '#ec4899';
+          if (found.color.includes('orange')) return '#f97316';
+          if (found.color.includes('indigo')) return '#6366f1';
+          if (found.color.includes('teal')) return '#14b8a6';
+      }
+
+      // 2. Fallback to name checking
+      const s = String(subjectName).toLowerCase();
+      if (s.includes('คณิต') || s.includes('math')) return '#ef4444'; 
+      if (s.includes('ไทย') || s.includes('thai')) return '#eab308'; 
+      if (s.includes('วิทย์') || s.includes('science')) return '#22c55e';
+      if (s.includes('อังกฤษ') || s.includes('english')) return '#3b82f6'; 
+      
+      return '#6b7280'; // Gray default
+  };
+
   // คำนวณสถิติ
   const statsData = useMemo(() => {
     // 1. กรองเฉพาะของนักเรียนคนนี้
     const myResults = examResults.filter(r => r.studentId === studentId);
 
     // 2. เตรียมข้อมูลแยกรายวิชา
-    // ดึงรายวิชาทั้งหมดที่นักเรียนเคยสอบ
     const uniqueSubjects = Array.from(new Set(myResults.map(r => r.subject)));
     
     const data = uniqueSubjects.map(subject => {
         const subjectResults = myResults.filter(r => r.subject === subject);
         const totalAttempts = subjectResults.length;
         
-        // หาคะแนนเฉลี่ย (%)
         let avgScore = 0;
         if (totalAttempts > 0) {
             const totalPercent = subjectResults.reduce((sum, r) => sum + ((r.score / r.totalQuestions) * 100), 0);
@@ -40,25 +65,12 @@ const Stats: React.FC<StatsProps> = ({ examResults, studentId, onBack }) => {
         };
     });
 
-    // 3. หาจุดเด่น / จุดด้อย
     const playedSubjects = data.filter(d => d.attempts > 0);
     const bestSubject = playedSubjects.length > 0 ? playedSubjects.reduce((prev, current) => (prev.score > current.score) ? prev : current) : null;
     const weakSubject = playedSubjects.length > 0 ? playedSubjects.reduce((prev, current) => (prev.score < current.score) ? prev : current) : null;
 
     return { chartData: data, totalExams: myResults.length, bestSubject, weakSubject };
-  }, [examResults, studentId]);
-
-  function getSubjectColor(subject: string) {
-      const s = String(subject).toLowerCase();
-      if (s.includes('คณิต') || s.includes('math')) return '#ef4444'; // Red
-      if (s.includes('ไทย') || s.includes('thai')) return '#eab308'; // Yellow
-      if (s.includes('วิทย์') || s.includes('science')) return '#22c55e'; // Green
-      if (s.includes('อังกฤษ') || s.includes('english')) return '#3b82f6'; // Blue
-      if (s.includes('สังคม') || s.includes('social')) return '#f97316'; // Orange
-      if (s.includes('ศิลปะ') || s.includes('art')) return '#ec4899'; // Pink
-      if (s.includes('คอม') || s.includes('computer')) return '#8b5cf6'; // Purple
-      return '#6b7280'; // Gray default
-  }
+  }, [examResults, studentId, subjects]);
 
   return (
     <div className="space-y-6 pb-20">
@@ -141,12 +153,15 @@ const Stats: React.FC<StatsProps> = ({ examResults, studentId, onBack }) => {
       <div className="grid grid-cols-2 gap-3">
         {statsData.chartData.map((sub) => (
             <div key={sub.name} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center">
-                <div>
-                    <div className="font-bold text-gray-800">{sub.name}</div>
-                    <div className="text-xs text-gray-400">เฉลี่ย {sub.score}%</div>
+                <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: sub.color }}></div>
+                    <div>
+                        <div className="font-bold text-gray-800 text-sm">{sub.name}</div>
+                        <div className="text-xs text-gray-400">เฉลี่ย {sub.score}%</div>
+                    </div>
                 </div>
                 <div className="text-right">
-                    <div className="text-2xl font-black text-blue-600">{sub.attempts}</div>
+                    <div className="text-xl font-black text-gray-700">{sub.attempts}</div>
                     <div className="text-[10px] text-gray-400">ครั้ง</div>
                 </div>
             </div>
