@@ -53,14 +53,21 @@ const Stats: React.FC<StatsProps> = ({ examResults, studentId, subjects = [], on
         
         let avgScore = 0;
         if (totalAttempts > 0) {
-            const totalPercent = subjectResults.reduce((sum, r) => sum + ((r.score / r.totalQuestions) * 100), 0);
+            const totalPercent = subjectResults.reduce((sum, r) => {
+                const s = Number(r.score) || 0;
+                const t = Number(r.totalQuestions);
+                if (t > 0) {
+                    return sum + ((s / t) * 100);
+                }
+                return sum;
+            }, 0);
             avgScore = Math.round(totalPercent / totalAttempts);
         }
 
         return {
             name: subject,
             attempts: totalAttempts,
-            score: avgScore,
+            score: isNaN(avgScore) ? 0 : avgScore,
             color: getSubjectColor(subject as string)
         };
     });

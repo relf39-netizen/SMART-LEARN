@@ -213,7 +213,46 @@ export const getTeacherDashboard = async (school: string) => {
       title: a.title || '' // ✅ Read Title
     }));
 
-    return { ...data, students: cleanStudents, questions: cleanQuestions, assignments: cleanAssignments };
+    // 🟢 Clean and Fix Results (Handle column shifts)
+    const cleanResults = (data.results || []).map((r: any) => {
+      let subject = normalizeSubject(r.subject);
+      let score = Number(r.score);
+      let total = Number(r.total);
+
+      // ⚠️ Heuristic Fix: Detect shifted columns
+      // If 'total' is NaN (likely a string subject) AND 'subject' looks like a number (likely a score)
+      if (isNaN(total) && !isNaN(Number(r.subject))) {
+          // Assuming shift: Subject(Col5) is Score, Score(Col6) is Total, Total(Col7) is Subject
+          // Check if r.score is also a number (Total)
+          if (!isNaN(Number(r.score))) {
+             const realScore = Number(r.subject);
+             const realTotal = Number(r.score);
+             const realSubject = String(r.total); // Normalize this?
+             
+             return {
+                id: Math.random().toString(36).substr(2, 9),
+                studentId: String(r.studentId),
+                subject: normalizeSubject(realSubject),
+                score: realScore,
+                totalQuestions: realTotal,
+                timestamp: new Date(r.timestamp).getTime(),
+                assignmentId: r.assignmentId !== '-' ? r.assignmentId : undefined
+             };
+          }
+      }
+
+      return {
+        id: Math.random().toString(36).substr(2, 9),
+        studentId: String(r.studentId),
+        subject: subject,
+        score: isNaN(score) ? 0 : score,
+        totalQuestions: isNaN(total) ? 0 : total,
+        timestamp: new Date(r.timestamp).getTime(),
+        assignmentId: r.assignmentId !== '-' ? r.assignmentId : undefined
+      };
+    });
+
+    return { ...data, students: cleanStudents, questions: cleanQuestions, assignments: cleanAssignments, results: cleanResults };
   } catch (e) {
     return { students: [], results: [], assignments: [], questions: [] };
   }
@@ -359,15 +398,35 @@ export const fetchAppData = async (): Promise<AppData> => {
       teacherId: q.teacherId ? String(q.teacherId) : undefined
     }));
 
-    const cleanResults = (data.results || []).map((r: any) => ({
-      id: Math.random().toString(36).substr(2, 9),
-      studentId: String(r.studentId),
-      subject: normalizeSubject(r.subject),
-      score: Number(r.score),
-      totalQuestions: Number(r.total),
-      timestamp: new Date(r.timestamp).getTime(),
-      assignmentId: r.assignmentId !== '-' ? r.assignmentId : undefined
-    }));
+    // 🟢 Clean Results with Fix Logic (Same as Teacher Dashboard)
+    const cleanResults = (data.results || []).map((r: any) => {
+      let subject = normalizeSubject(r.subject);
+      let score = Number(r.score);
+      let total = Number(r.total);
+
+      // Heuristic Fix for swapped columns in Google Sheet
+      if (isNaN(total) && !isNaN(Number(r.subject)) && !isNaN(Number(r.score))) {
+          return {
+            id: Math.random().toString(36).substr(2, 9),
+            studentId: String(r.studentId),
+            subject: normalizeSubject(String(r.total)), // Subject is in Total column
+            score: Number(r.subject),                   // Score is in Subject column
+            totalQuestions: Number(r.score),            // Total is in Score column
+            timestamp: new Date(r.timestamp).getTime(),
+            assignmentId: r.assignmentId !== '-' ? r.assignmentId : undefined
+          };
+      }
+
+      return {
+        id: Math.random().toString(36).substr(2, 9),
+        studentId: String(r.studentId),
+        subject: subject,
+        score: isNaN(score) ? 0 : score,
+        totalQuestions: isNaN(total) ? 0 : total,
+        timestamp: new Date(r.timestamp).getTime(),
+        assignmentId: r.assignmentId !== '-' ? r.assignmentId : undefined
+      };
+    });
     
     const cleanAssignments = (data.assignments || []).map((a: any) => ({
       id: String(a.id), 
