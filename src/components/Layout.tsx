@@ -1,6 +1,5 @@
-
 import React from 'react';
-import { BookOpen, Trophy, BarChart, LogOut, Music, Volume2, VolumeX, School } from 'lucide-react';
+import { BookOpen, Trophy, BarChart, LogOut, Music, Volume2, VolumeX } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -26,10 +25,8 @@ const Layout: React.FC<LayoutProps> = ({
       {/* Header */}
       <header className="bg-white shadow-md sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => onNavigate('dashboard')}>
-            <div className="bg-indigo-600 text-white p-2 rounded-lg shadow-sm">
-              <School size={24} />
-            </div>
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => onNavigate('dashboard')}>
+            <img src="https://img5.pic.in.th/file/secure-sv1/84826f0e65d9e89b36ed2ea9939f6d55.png" alt="Logo" className="w-10 h-10 rounded-lg shadow-sm object-contain bg-white" />
             <div>
                 <h1 className="text-xl font-bold text-indigo-900 leading-tight hidden md:block">LittleSchool LearnUp</h1>
                 <h1 className="text-xl font-bold text-indigo-900 leading-tight md:hidden">LittleSchool</h1>

@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { Student } from '../types';
-import { AlertCircle, GraduationCap, School } from 'lucide-react';
+import { AlertCircle, GraduationCap } from 'lucide-react';
 
 interface LoginProps {
   onLogin: (student: Student) => void;
@@ -55,8 +54,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, onTeacherLoginClick, students })
       <div className="bg-white p-6 md:p-8 rounded-[32px] shadow-2xl w-full max-w-md border-4 border-indigo-50 relative z-10">
         
         <div className="text-center mb-6">
-          <div className="inline-flex bg-indigo-100 p-4 rounded-full text-indigo-600 mb-3 shadow-sm">
-             <School size={40} />
+          <div className="inline-block p-2 rounded-2xl mb-2 shadow-sm bg-white border border-indigo-50">
+             <img src="https://img5.pic.in.th/file/secure-sv1/84826f0e65d9e89b36ed2ea9939f6d55.png" alt="Logo" className="w-20 h-20 object-contain" />
           </div>
           <h2 className="text-2xl font-bold text-indigo-900 mb-1">LittleSchool LearnUp</h2>
           <p className="text-indigo-600 font-medium text-sm mb-4">ก้าวเล็กๆ สู่ความสำเร็จที่ยิ่งใหญ่</p>

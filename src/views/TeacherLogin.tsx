@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { Teacher } from '../types';
-import { ArrowLeft, GraduationCap, Lock, School, UserPlus, X, CreditCard, User } from 'lucide-react';
+import { ArrowLeft, Lock, UserPlus, X, CreditCard, User } from 'lucide-react';
 import { teacherLogin, requestRegistration } from '../services/api';
 
 interface TeacherLoginProps {
@@ -107,8 +106,8 @@ const TeacherLogin: React.FC<TeacherLoginProps> = ({ onLoginSuccess, onBack }) =
         </button>
 
         <div className="text-center mb-8">
-          <div className="bg-purple-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-purple-600">
-            <School size={32} />
+          <div className="inline-block p-2 rounded-2xl mb-4 bg-white border border-purple-100 shadow-sm">
+            <img src="https://img5.pic.in.th/file/secure-sv1/84826f0e65d9e89b36ed2ea9939f6d55.png" alt="Logo" className="w-16 h-16 object-contain" />
           </div>
           <h2 className="text-2xl font-bold text-gray-800">LittleSchool Teacher</h2>
           <p className="text-gray-500 text-sm">ระบบจัดการการเรียนรู้สำหรับคุณครู</p>
