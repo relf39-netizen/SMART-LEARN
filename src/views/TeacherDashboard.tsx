@@ -58,6 +58,9 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const isAdmin = (teacher.role && teacher.role.toUpperCase() === 'ADMIN') || 
                   (teacher.username && teacher.username.toLowerCase() === 'admin');
 
+  // ✅ New Logic: O-NET Access (P6, M3, or Admin only)
+  const canAccessOnet = canManageAll || teacher.gradeLevel === 'P6' || teacher.gradeLevel === 'M3';
+
   // Student Form & Management State
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentAvatar, setNewStudentAvatar] = useState('👦');
@@ -116,9 +119,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [onetSubjectFilter, setOnetSubjectFilter] = useState<string>('ALL');
   
   // ✅ P-Chat (O-NET) Auto Select Grade Logic
-  // If teacher has a specific grade (e.g., P3), set it automatically.
-  // If teacher is ALL (Admin), start with null to show selection screen.
-  const initialOnetLevel = (!teacher.gradeLevel || teacher.gradeLevel === 'ALL') ? null : teacher.gradeLevel;
+  // Only auto-select if P6 or M3. Admin (ALL) starts with null.
+  const initialOnetLevel = (teacher.gradeLevel === 'P6' || teacher.gradeLevel === 'M3') ? teacher.gradeLevel : null;
   const [onetLevel, setOnetLevel] = useState<string | null>(initialOnetLevel); 
 
   // ✅ Updated GRADES constant to include M1-M3
@@ -167,8 +169,12 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       if (!canManageAll && teacher.gradeLevel) {
           setAssignGrade(teacher.gradeLevel);
           setQGrade(teacher.gradeLevel);
-          // ✅ Update O-NET level if teacher is not ALL
-          setOnetLevel(teacher.gradeLevel);
+          // ✅ Update O-NET level if teacher is P6 or M3 only
+          if (teacher.gradeLevel === 'P6' || teacher.gradeLevel === 'M3') {
+              setOnetLevel(teacher.gradeLevel);
+          } else {
+              setOnetLevel(null);
+          }
       }
   }, [teacher]);
 
@@ -846,7 +852,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 onClick={() => { setActiveTab('profile'); setProfileName(teacher.name); setProfilePassword(''); setProfileConfirmPass(''); }} 
             />
 
-            {/* ✅ P-Chat (O-NET) Button: Visible to all, filters by grade */}
+            {/* ✅ P-Chat (O-NET) Button: Visible only to P6, M3, and Admin */}
+            {canAccessOnet && (
             <MenuCard 
                 icon={<Trophy size={40} />} 
                 title={onetLevel ? `พิชิต O-NET ${GRADE_LABELS[onetLevel]}` : "พิชิต O-NET"} 
@@ -854,6 +861,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 color="bg-indigo-50 text-indigo-600 border-indigo-200 shadow-indigo-100" 
                 onClick={() => { setActiveTab('onet'); setAssignStep(1); setNewlyGeneratedQuestions([]); }} 
             />
+            )}
 
             {/* Admin Only Card */}
             {isAdmin && (
