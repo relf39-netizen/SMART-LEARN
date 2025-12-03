@@ -1,19 +1,23 @@
+
 import React, { useState } from 'react';
 import { Student } from '../types';
-import { AlertCircle, GraduationCap } from 'lucide-react';
+import { AlertCircle, GraduationCap, Loader2 } from 'lucide-react';
+import { verifyStudentLogin } from '../services/api'; // ✅ Import new API
 
 interface LoginProps {
   onLogin: (student: Student) => void;
   onTeacherLoginClick: () => void;
-  students: Student[];
+  // students prop removed!
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, onTeacherLoginClick, students }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, onTeacherLoginClick }) => {
   const [inputCode, setInputCode] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false); // ✅ Check status
   const [foundStudent, setFoundStudent] = useState<Student | null>(null);
 
   const handleNumberClick = (num: string) => {
+    if (loading) return; // Prevent input while checking
     if (inputCode.length < 5) {
       const newCode = inputCode + num;
       setInputCode(newCode);
@@ -26,19 +30,25 @@ const Login: React.FC<LoginProps> = ({ onLogin, onTeacherLoginClick, students })
   };
 
   const handleBackspace = () => {
+    if (loading) return;
     setInputCode(prev => prev.slice(0, -1));
     setError('');
     setFoundStudent(null);
   };
 
-  const checkStudent = (code: string) => {
-    const student = students.find(s => String(s.id).trim() === code);
+  const checkStudent = async (code: string) => {
+    setLoading(true);
     
+    // ✅ Call Server-side verify (No downloading all students)
+    const student = await verifyStudentLogin(code);
+    
+    setLoading(false);
+
     if (student) {
       setFoundStudent(student);
       setTimeout(() => {
         onLogin(student);
-      }, 1500);
+      }, 1000);
     } else {
       setError(`ไม่พบข้อมูลรหัส ${code}`);
       setFoundStudent(null);
@@ -62,8 +72,13 @@ const Login: React.FC<LoginProps> = ({ onLogin, onTeacherLoginClick, students })
           <p className="text-gray-500 text-sm">พิมพ์รหัสประจำตัว 5 หลัก เพื่อเข้าเรียน</p>
         </div>
 
-        <div className="bg-gray-50 rounded-2xl p-4 mb-6 h-24 flex items-center justify-center border border-gray-100">
-          {foundStudent ? (
+        <div className="bg-gray-50 rounded-2xl p-4 mb-6 h-24 flex items-center justify-center border border-gray-100 relative">
+          {loading ? (
+             <div className="flex flex-col items-center text-blue-500">
+                 <Loader2 className="animate-spin mb-1" size={30} />
+                 <span className="text-xs font-bold">กำลังตรวจสอบ...</span>
+             </div>
+          ) : foundStudent ? (
             <div className="flex flex-col items-center animate-bounce">
               <span className="text-4xl mb-1">{foundStudent.avatar}</span>
               <span className="text-lg font-bold text-green-600">{foundStudent.name}</span>

@@ -27,34 +27,89 @@ const snapshotToArray = <T>(snapshot: any): T[] => {
 // Helper: Clean String (Remove Trailing Spaces)
 const cleanString = (str?: string) => str ? String(str).trim() : '';
 
-// 🔄 ฟังก์ชันช่วยแปลงรหัสวิชา (ถ้าจำเป็น)
-const normalizeSubject = (rawSubject: string): Subject => {
-  return String(rawSubject).trim();
+// ---------------------------------------------------------------------------
+// 🟢 OPTIMIZED: STUDENT LOGIN & DATA FETCHING
+// ---------------------------------------------------------------------------
+
+// 1. เช็ค Login โดยดึงเฉพาะ ID นั้นๆ (Server-side check) - ประหยัดเน็ตมาก
+export const verifyStudentLogin = async (studentId: string): Promise<Student | null> => {
+    try {
+        const snapshot = await db.ref(`students/${studentId}`).once('value');
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            return { ...data, id: studentId };
+        }
+        return null;
+    } catch (error) {
+        console.error("Login verification failed:", error);
+        return null;
+    }
 };
 
-// ---------------------------------------------------------------------------
-// 🟢 SYSTEM INITIALIZATION (SEEDING)
-// ---------------------------------------------------------------------------
+// 2. ดึงข้อมูลที่จำเป็นสำหรับนักเรียนคนนั้น *หลังจาก* Login ผ่านแล้ว
+export const getDataForStudent = async (student: Student): Promise<{
+    questions: Question[],
+    results: ExamResult[],
+    assignments: Assignment[],
+    subjects: SubjectConfig[]
+}> => {
+    try {
+        const cleanSchool = cleanString(student.school);
+        const studentGrade = student.grade || 'ALL';
 
-const seedDatabase = async () => {
-    console.log("🌱 Seeding database with initial data...");
-    
-    // 1. Seed Students
-    const studentRef = db.ref('students');
-    for (const s of MOCK_STUDENTS) {
-        await studentRef.child(s.id).set({ ...s, stars: 0 });
-    }
+        // Parallel Fetching: ดึงเฉพาะข้อมูลที่เกี่ยวข้องกับโรงเรียนหรือนักเรียนคนนี้
+        const [resultsSnap, assignmentsSnap, questionsSnap, subjectsSnap] = await Promise.all([
+            // ดึงผลสอบเฉพาะของนักเรียนคนนี้
+            db.ref('results').orderByChild('studentId').equalTo(student.id).once('value'),
+            
+            // ดึงการบ้านเฉพาะโรงเรียนนี้
+            db.ref('assignments').orderByChild('school').equalTo(cleanSchool).once('value'),
+            
+            // ดึงข้อสอบ (อาจจะยังต้องดึงทั้งหมดหรือกรองตามเกรด ถ้าโครงสร้าง DB รองรับ)
+            // หมายเหตุ: การดึง questions ทั้งหมดยังจำเป็นสำหรับ Practice Mode แบบคละ
+            // แต่ในอนาคตควรเปลี่ยนโครงสร้างเป็น questions/{grade}/{subject} เพื่อลดโหลด
+            db.ref('questions').once('value'),
 
-    // 2. Seed Questions
-    const questionRef = db.ref('questions');
-    for (const q of MOCK_QUESTIONS) {
-        const newRef = questionRef.push();
-        await newRef.set({ 
-            ...q, 
-            id: newRef.key,
-            school: 'CENTER', // Default to center so everyone sees it
-            grade: q.grade || 'P6'
-        });
+            // ดึงรายวิชาของโรงเรียน
+            db.ref(`subjects/${cleanSchool}`).once('value')
+        ]);
+
+        const results = snapshotToArray<ExamResult>(resultsSnap);
+        const assignments = snapshotToArray<Assignment>(assignmentsSnap);
+        
+        // Parse Questions
+        const questionsRaw = questionsSnap.val();
+        const questions: Question[] = [];
+        if (questionsRaw) {
+            Object.keys(questionsRaw).forEach(k => {
+                const q = questionsRaw[k];
+                // Filter เบื้องต้น (Optional: กรองข้อสอบที่ไม่ใช่ของโรงเรียนอื่นทิ้ง เพื่อประหยัด Memory)
+                if (q.school && q.school !== 'CENTER' && q.school !== 'Admin' && q.school !== cleanSchool) {
+                    return; 
+                }
+
+                let choices = q.choices;
+                if (choices && typeof choices === 'object' && !Array.isArray(choices)) {
+                    choices = Object.values(choices);
+                }
+                if (!Array.isArray(choices)) choices = [];
+                
+                questions.push({ ...q, id: k, choices, image: q.image || '' });
+            });
+        }
+
+        // Parse Subjects
+        let subjects: SubjectConfig[] = [];
+        if (subjectsSnap.exists()) {
+            const subData = subjectsSnap.val();
+            subjects = Object.keys(subData).map(key => ({ ...subData[key], id: key }));
+        }
+
+        return { questions, results, assignments, subjects };
+
+    } catch (error) {
+        console.error("Error fetching student data:", error);
+        return { questions: [], results: [], assignments: [], subjects: [] };
     }
 };
 
@@ -64,11 +119,9 @@ const seedDatabase = async () => {
 
 export const getSchools = async (): Promise<School[]> => {
   try {
-    // 1. Get explicit schools
     const snapshot = await db.ref('schools').once('value');
     const schools = snapshotToArray<School>(snapshot);
 
-    // 2. Get distinct schools from Teachers (Legacy support)
     const teachersSnap = await db.ref('teachers').once('value');
     const teachers = snapshotToArray<Teacher>(teachersSnap);
     
@@ -93,7 +146,6 @@ export const manageSchool = async (data: { action: 'add' | 'delete', name?: stri
   try {
     if (data.action === 'add' && data.name) {
       const cleanName = cleanString(data.name);
-      // Check duplicate
       const existing = await db.ref('schools').orderByChild('name').equalTo(cleanName).once('value');
       if (existing.exists()) return false;
 
@@ -162,7 +214,6 @@ export const deleteSubject = async (school: string, subjectId: string): Promise<
 
 export const teacherLogin = async (username: string, password: string): Promise<{success: boolean, teacher?: Teacher}> => {
   try {
-    // 1. Try to find the user in Firebase
     const snapshot = await db.ref('teachers')
                              .orderByChild('username')
                              .equalTo(username)
@@ -175,14 +226,13 @@ export const teacherLogin = async (username: string, password: string): Promise<
         return { success: true, teacher };
       }
     } else {
-        // 2. 🚨 SPECIAL FALLBACK: If 'admin' doesn't exist, CREATE IT automatically
         if (username === 'admin' && password === '1234') {
              const newAdmin: Teacher = {
                  id: 'admin_root',
                  username: 'admin',
                  password: '1234',
                  name: 'Super Admin',
-                 school: 'System', // System level
+                 school: 'System', 
                  role: 'ADMIN',
                  gradeLevel: 'ALL'
              };
@@ -247,7 +297,7 @@ export const manageTeacher = async (data: {
 };
 
 // ---------------------------------------------------------------------------
-// 🟢 REGISTRATION SYSTEM (NEW)
+// 🟢 REGISTRATION SYSTEM
 // ---------------------------------------------------------------------------
 
 export const getRegistrationStatus = async (): Promise<boolean> => {
@@ -269,11 +319,9 @@ export const requestRegistration = async (citizenId: string, name: string, surna
         const isEnabled = await getRegistrationStatus();
         if (!isEnabled) return { success: false, message: 'ระบบปิดรับสมัครสมาชิกชั่วคราว' };
 
-        // Check if Teacher already exists
         const teacherSnap = await db.ref('teachers').orderByChild('username').equalTo(citizenId).once('value');
         if (teacherSnap.exists()) return { success: false, message: 'เลขบัตรประชาชนนี้มีในระบบแล้ว' };
 
-        // Check pending
         const pendingSnap = await db.ref('pending_registrations').orderByChild('citizenId').equalTo(citizenId).once('value');
         if (pendingSnap.exists()) return { success: false, message: 'คุณได้ส่งคำขอไปแล้ว รอการอนุมัติ' };
 
@@ -300,26 +348,19 @@ export const getPendingRegistrations = async (): Promise<RegistrationRequest[]> 
 export const approveRegistration = async (req: RegistrationRequest, schoolName: string): Promise<boolean> => {
     try {
         const cleanSchool = cleanString(schoolName);
-        
-        // 1. Create Teacher (Auto password: '123456')
         const newRef = db.ref('teachers').push();
         await newRef.set({
             id: newRef.key,
             name: `${req.name} ${req.surname}`,
-            username: req.citizenId, // Username is Citizen ID
-            password: '123456', // Auto password
+            username: req.citizenId,
+            password: '123456',
             school: cleanSchool,
             role: 'TEACHER',
             gradeLevel: 'ALL',
             citizenId: req.citizenId
         });
-
-        // 2. Remove from pending
         await db.ref(`pending_registrations/${req.id}`).remove();
-        
-        // 3. Ensure school exists in schools list if not legacy
         await manageSchool({ action: 'add', name: cleanSchool });
-
         return true;
     } catch (e) { return false; }
 };
@@ -383,24 +424,24 @@ export const addStudent = async (name: string, school: string, avatar: string, g
 export const getTeacherDashboard = async (school: string) => {
   try {
     const cleanSchool = cleanString(school);
+    
+    // Optimized: Fetch only relevant data for the teacher's dashboard
     const [studentsSnap, resultsSnap, assignmentsSnap, questionsSnap] = await Promise.all([
         db.ref('students').orderByChild('school').equalTo(cleanSchool).once('value'),
         db.ref('results').orderByChild('school').equalTo(cleanSchool).once('value'),
         db.ref('assignments').orderByChild('school').equalTo(cleanSchool).once('value'),
-        db.ref('questions').once('value') 
+        db.ref('questions').once('value') // Still fetching all Qs for question bank view
     ]);
 
     const students = snapshotToArray<Student>(studentsSnap);
     const results = snapshotToArray<ExamResult>(resultsSnap);
     const assignments = snapshotToArray<Assignment>(assignmentsSnap);
     
-    // ✅ Use robust helper for questions array
     const questionsRaw = questionsSnap.val();
     const questions: Question[] = [];
     if (questionsRaw) {
         Object.keys(questionsRaw).forEach(k => {
             const q = questionsRaw[k];
-            // Ensure choices is array
             let choices = q.choices;
             if (choices && typeof choices === 'object' && !Array.isArray(choices)) {
                 choices = Object.values(choices);
@@ -548,19 +589,15 @@ export const saveScore = async (studentId: string, studentName: string, school: 
 }
 
 // ---------------------------------------------------------------------------
-// 🟢 FETCH ALL APP DATA (INITIAL LOAD)
+// 🟢 FETCH ALL APP DATA (INITIAL LOAD) - DEPRECATED/ADMIN ONLY
 // ---------------------------------------------------------------------------
 
+// ⚠️ ใช้สำหรับ Admin หรือ GameSetup ที่จำเป็นต้องโหลดเยอะๆ เท่านั้น
 export const fetchAppData = async (): Promise<AppData> => {
   try {
+    // ⚠️ WARNING: Heavy call.
     const snapshot = await db.ref('/').once('value');
     let data = snapshot.val();
-
-    if (!data || (!data.students && !data.questions)) {
-        await seedDatabase();
-        const newSnap = await db.ref('/').once('value');
-        data = newSnap.val();
-    }
 
     if (!data) return { students: [], questions: [], results: [], assignments: [] };
 
@@ -568,12 +605,10 @@ export const fetchAppData = async (): Promise<AppData> => {
         ? Object.keys(data.students).map(k => ({...data.students[k], id: k})) 
         : [];
         
-    // ✅ ROBUST QUESTION PARSING
     const questionsArr: Question[] = [];
     if (data.questions) {
         Object.keys(data.questions).forEach(k => {
             const q = data.questions[k];
-            // Normalize choices
             let choices = q.choices;
             if (choices && typeof choices === 'object' && !Array.isArray(choices)) {
                 choices = Object.values(choices);
@@ -584,7 +619,7 @@ export const fetchAppData = async (): Promise<AppData> => {
                 ...q,
                 id: k,
                 choices: choices,
-                image: q.image || '', // Ensure no undefined props
+                image: q.image || '', 
             });
         });
     }
@@ -594,7 +629,11 @@ export const fetchAppData = async (): Promise<AppData> => {
         : [];
 
     const assignmentsArr: Assignment[] = data.assignments 
-        ? Object.keys(data.assignments).map(k => ({...data.assignments[k], id: k})) 
+        ? Object.keys(data.assignments).map(k => ({
+            ...data.assignments[k], 
+            id: k,
+            title: data.assignments[k].title || '' 
+        })) 
         : [];
 
     return { 

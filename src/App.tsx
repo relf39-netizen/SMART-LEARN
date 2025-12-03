@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState } from 'react';
 import Layout from './components/Layout';
 import Login from './views/Login';
 import TeacherLogin from './views/TeacherLogin';
@@ -11,9 +12,8 @@ import GameSetup from './views/GameSetup';
 import Results from './views/Results';
 import Stats from './views/Stats';
 import { Student, Question, Teacher, Subject, ExamResult, Assignment, SubjectConfig } from './types';
-import { fetchAppData, saveScore, getSubjects } from './services/api';
+import { saveScore, getDataForStudent } from './services/api'; // ✅ Remove fetchAppData from here
 import { Loader2 } from 'lucide-react';
-import { MOCK_STUDENTS, MOCK_QUESTIONS } from './constants';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<Student | null>(null);
@@ -29,66 +29,32 @@ const App: React.FC = () => {
   // ✅ New State for Game PIN
   const [gameRoomCode, setGameRoomCode] = useState<string>('');
   
-  const [students, setStudents] = useState<Student[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [examResults, setExamResults] = useState<ExamResult[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [subjects, setSubjects] = useState<SubjectConfig[]>([]); // ✅ Store dynamic subjects
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    let isMounted = true;
-    const initData = async () => {
-      const safetyTimer = setTimeout(() => {
-        if (isMounted && isLoading) {
-          console.warn("Loading taking too long, switching to fallback data...");
-          setStudents(MOCK_STUDENTS);
-          setQuestions(MOCK_QUESTIONS);
-          setIsLoading(false);
-        }
-      }, 2500);
-
-      try {
-        const data = await fetchAppData();
-        if (isMounted) {
-          clearTimeout(safetyTimer);
-          if (data.students.length > 0) {
-             setStudents(data.students);
-             setQuestions(data.questions);
-             setExamResults(data.results);
-             setAssignments(data.assignments);
-          } else {
-             setStudents(MOCK_STUDENTS);
-             setQuestions(MOCK_QUESTIONS);
-          }
-          setIsLoading(false);
-        }
-      } catch (error) {
-        console.error("Failed to load data", error);
-        if (isMounted) {
-           setStudents(MOCK_STUDENTS);
-           setQuestions(MOCK_QUESTIONS);
-           setIsLoading(false);
-        }
-      }
-    };
-    initData();
-    return () => { isMounted = false; };
-  }, []);
-
-  const fetchStudentSubjects = async (schoolName: string) => {
-      try {
-        const schoolSubjects = await getSubjects(schoolName || 'โรงเรียนคุณภาพ');
-        setSubjects(schoolSubjects);
-      } catch (e) {
-        console.error("Failed to load subjects", e);
-      }
-  };
+  const [subjects, setSubjects] = useState<SubjectConfig[]>([]); 
+  const [isLoading, setIsLoading] = useState(false); // ✅ Default to false (no initial load)
 
   const handleLogin = async (student: Student) => { 
+    // ✅ Start loading after login
+    setIsLoading(true);
     setCurrentUser(student); 
-    await fetchStudentSubjects(student.school || 'โรงเรียนคุณภาพ');
-    setCurrentPage('dashboard'); 
+    
+    try {
+      // ✅ Fetch ONLY necessary data for this student
+      const data = await getDataForStudent(student);
+      setQuestions(data.questions);
+      setExamResults(data.results);
+      setAssignments(data.assignments);
+      setSubjects(data.subjects);
+      
+      setCurrentPage('dashboard'); 
+    } catch (e) {
+      console.error("Failed to load student data", e);
+      alert("เกิดข้อผิดพลาดในการโหลดข้อมูล");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleTeacherLoginSuccess = (teacher: Teacher) => { setCurrentTeacher(teacher); setCurrentPage('teacher-dashboard'); };
@@ -100,6 +66,8 @@ const App: React.FC = () => {
       setCurrentAssignment(null);
       setGameRoomCode(''); 
       setSubjects([]);
+      setQuestions([]); // Clear data
+      setAssignments([]);
   };
 
   const handleFinishExam = async (score: number, total: number, source: 'practice' | 'game' = 'practice') => {
@@ -182,7 +150,7 @@ const App: React.FC = () => {
       return <GameMode student={teacherAsStudent} initialRoomCode={gameRoomCode} onExit={() => setCurrentPage('teacher-dashboard')} />;
   }
   
-  if (currentPage === 'login' && !currentUser) return <Login onLogin={handleLogin} onTeacherLoginClick={() => setCurrentPage('teacher-login')} students={students} />;
+  if (currentPage === 'login' && !currentUser) return <Login onLogin={handleLogin} onTeacherLoginClick={() => setCurrentPage('teacher-login')} />;
 
   return (
     <Layout studentName={currentUser?.name} onLogout={handleLogout} isMusicOn={isMusicOn} toggleMusic={() => setIsMusicOn(!isMusicOn)} currentPage={currentPage} onNavigate={setCurrentPage}>
@@ -196,8 +164,8 @@ const App: React.FC = () => {
               subjects={subjects} 
               onNavigate={setCurrentPage} 
               onStartAssignment={handleStartAssignment}
-              onSelectSubject={handleSelectSubject} 
-              onRefreshSubjects={() => fetchStudentSubjects(currentUser!.school || 'โรงเรียนคุณภาพ')}
+              onSelectSubject={handleSelectSubject}
+              onRefreshSubjects={() => handleLogin(currentUser!)} // Allow refresh
             />;
           case 'select-subject': return <SubjectSelection onSelectSubject={handleSelectSubject} onBack={() => setCurrentPage('dashboard')} />;
           case 'practice':
