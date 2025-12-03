@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Teacher, Student, Subject, Assignment, Question, SubjectConfig, School, RegistrationRequest } from '../types';
 import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, Users, GraduationCap, Trash2, Edit, Shield, UserCog, KeyRound, Sparkles, Wand2, Key, HelpCircle, ChevronDown, ChevronUp, Layers, Clock, Library, Palette, Type, AlertCircle, ArrowRight, BrainCircuit, List, CheckSquare, Trophy, Lock, User, Activity, Building, CreditCard, Check, ToggleLeft, ToggleRight } from 'lucide-react';
@@ -35,7 +36,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [newTeacherUser, setNewTeacherUser] = useState('');
   const [newTeacherPass, setNewTeacherPass] = useState('');
   const [newTeacherSchool, setNewTeacherSchool] = useState('');
-  const [newTeacherGrade, setNewTeacherGrade] = useState('ALL'); 
+  // ✅ Changed: Support multiple grades for teacher creation
+  const [newTeacherGrades, setNewTeacherGrades] = useState<string[]>(['ALL']); 
   const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null); 
   
   // Registration Management
@@ -49,17 +51,22 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [profilePassword, setProfilePassword] = useState('');
   const [profileConfirmPass, setProfileConfirmPass] = useState('');
 
-  // Permissions Logic
-  const canManageAll = !teacher.gradeLevel || teacher.gradeLevel === 'ALL';
-  const userGradeLevel = canManageAll ? 'P6' : teacher.gradeLevel!; 
-  const isP6OrAdmin = userGradeLevel === 'P6' || canManageAll;
+  // ✅ Permissions Logic (Updated for Multi-Grade)
+  // Helper to get array of grades from teacher object
+  const getTeacherGrades = (t: Teacher): string[] => {
+      if (!t.gradeLevel) return ['ALL'];
+      return t.gradeLevel.split(',').map(g => g.trim());
+  };
+
+  const myGrades = getTeacherGrades(teacher);
+  const canManageAll = myGrades.includes('ALL');
   
   // Robust Admin Check (Check both Role and Username fallback)
   const isAdmin = (teacher.role && teacher.role.toUpperCase() === 'ADMIN') || 
                   (teacher.username && teacher.username.toLowerCase() === 'admin');
 
-  // ✅ New Logic: O-NET Access (P6, M3, or Admin only)
-  const canAccessOnet = canManageAll || teacher.gradeLevel === 'P6' || teacher.gradeLevel === 'M3';
+  // ✅ New Logic: O-NET Access (If teaches P6, M3, or is Admin)
+  const canAccessOnet = canManageAll || myGrades.includes('P6') || myGrades.includes('M3');
 
   // Student Form & Management State
   const [newStudentName, setNewStudentName] = useState('');
@@ -76,7 +83,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [assignStep, setAssignStep] = useState<1 | 2>(1); // 1: Info, 2: AI Generation
   const [assignTitle, setAssignTitle] = useState('');
   const [assignSubject, setAssignSubject] = useState<string>(''); // Dynamic Subject
-  const [assignGrade, setAssignGrade] = useState<string>(canManageAll ? 'ALL' : teacher.gradeLevel!); 
+  // Default assign grade to first available grade or ALL
+  const [assignGrade, setAssignGrade] = useState<string>(canManageAll ? 'ALL' : (myGrades[0] || 'P6')); 
   const [assignCount, setAssignCount] = useState(10);
   const [assignDeadline, setAssignDeadline] = useState('');
   
@@ -87,7 +95,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   // Question Form
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
   const [qSubject, setQSubject] = useState<string>(''); // Dynamic Subject
-  const [qGrade, setQGrade] = useState<string>(userGradeLevel);
+  const [qGrade, setQGrade] = useState<string>(canManageAll ? 'P6' : (myGrades[0] || 'P6'));
   const [qText, setQText] = useState('');
   const [qImage, setQImage] = useState('');
   const [qChoices, setQChoices] = useState({c1:'', c2:'', c3:'', c4:''});
@@ -119,9 +127,15 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [onetSubjectFilter, setOnetSubjectFilter] = useState<string>('ALL');
   
   // ✅ P-Chat (O-NET) Auto Select Grade Logic
-  // Only auto-select if P6 or M3. Admin (ALL) starts with null.
-  const initialOnetLevel = (teacher.gradeLevel === 'P6' || teacher.gradeLevel === 'M3') ? teacher.gradeLevel : null;
-  const [onetLevel, setOnetLevel] = useState<string | null>(initialOnetLevel); 
+  // Check if teacher has specific O-NET grades
+  const hasP6 = myGrades.includes('P6');
+  const hasM3 = myGrades.includes('M3');
+  
+  let defaultOnet = null;
+  if (hasP6 && !hasM3) defaultOnet = 'P6';
+  else if (!hasP6 && hasM3) defaultOnet = 'M3';
+  
+  const [onetLevel, setOnetLevel] = useState<string | null>(defaultOnet); 
 
   // ✅ Updated GRADES constant to include M1-M3
   const GRADES = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'M1', 'M2', 'M3'];
@@ -166,15 +180,15 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   }, []);
 
   useEffect(() => {
-      if (!canManageAll && teacher.gradeLevel) {
-          setAssignGrade(teacher.gradeLevel);
-          setQGrade(teacher.gradeLevel);
-          // ✅ Update O-NET level if teacher is P6 or M3 only
-          if (teacher.gradeLevel === 'P6' || teacher.gradeLevel === 'M3') {
-              setOnetLevel(teacher.gradeLevel);
-          } else {
-              setOnetLevel(null);
-          }
+      if (!canManageAll && myGrades.length > 0) {
+          // Default to first grade if available
+          const defaultGrade = myGrades[0];
+          setAssignGrade(defaultGrade);
+          setQGrade(defaultGrade);
+          
+          // Logic for O-NET level handled in state init, but double check
+          if (hasP6 && !hasM3) setOnetLevel('P6');
+          else if (!hasP6 && hasM3) setOnetLevel('M3');
       }
   }, [teacher]);
 
@@ -200,12 +214,11 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         setPendingRegs(pending);
     }
     
-    // ✅ Relaxed Subject Filtering: Show all subjects for school/grade, don't strictly filter by teacherId initially to prevent missing data
+    // ✅ Relaxed Subject Filtering: Show all subjects for school/grade
     const filteredSubjects = subs.filter(s => {
-        // If Admin/Director (ALL), see everything for school
         if (canManageAll) return true;
-        // If Class Teacher, see subjects for that grade OR subjects they created
-        return s.grade === teacher.gradeLevel || s.teacherId === normalizeId(teacher.id) || s.grade === 'ALL';
+        // Show subject if it matches ANY of the teacher's grades OR if created by teacher
+        return myGrades.includes(s.grade) || s.teacherId === normalizeId(teacher.id) || s.grade === 'ALL';
     });
 
     setAvailableSubjects(filteredSubjects);
@@ -215,7 +228,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         setQSubject(filteredSubjects[0].name);
     }
 
-    // ✅ FIXED: Relax filtering logic to find students even with whitespace mismatch
+    // ✅ FIXED: Filter students based on Multi-Grade Logic
     const myStudents = (data.students || []).filter((s: Student) => {
         const sSchool = String(s.school || '').trim();
         const tSchool = String(teacher.school || '').trim();
@@ -223,8 +236,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         // Basic School Match
         if (sSchool !== tSchool) return false;
         
-        // Grade Match (only if teacher is not ALL)
-        if (!canManageAll && s.grade !== teacher.gradeLevel) return false;
+        // Grade Match (multi-grade support)
+        if (!canManageAll) {
+            return myGrades.includes(s.grade || '');
+        }
         
         return true; 
     });
@@ -363,7 +378,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
           name: newSubjectName,
           school: teacher.school,
           teacherId: normalizeId(teacher.id),
-          grade: teacher.gradeLevel || 'ALL',
+          // Default to first assigned grade or ALL
+          grade: canManageAll ? 'ALL' : (myGrades[0] || 'ALL'), 
           icon: newSubjectIcon,
           color: newSubjectColor
       };
@@ -388,13 +404,30 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       loadData();
   };
   
-  // Teacher Management
+  // Teacher Management Helpers
+  const toggleTeacherGrade = (grade: string) => {
+      setNewTeacherGrades(prev => {
+          if (grade === 'ALL') return ['ALL'];
+          let newGrades = prev.filter(g => g !== 'ALL');
+          if (newGrades.includes(grade)) {
+              newGrades = newGrades.filter(g => g !== grade);
+          } else {
+              newGrades.push(grade);
+          }
+          if (newGrades.length === 0) return ['ALL']; // Default fallback
+          return newGrades;
+      });
+  };
+
   const handleSaveTeacher = async () => {
       if (!newTeacherName || !newTeacherUser) return alert('กรุณากรอกชื่อและ Username');
       if (!editingTeacherId && !newTeacherPass) return alert('กรุณากำหนดรหัสผ่านสำหรับบัญชีใหม่');
 
       setIsProcessing(true);
       
+      // ✅ Join grades with comma
+      const gradeLevelString = newTeacherGrades.join(',');
+
       const teacherData: any = {
           action: editingTeacherId ? 'edit' : 'add',
           id: editingTeacherId || undefined,
@@ -402,7 +435,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
           username: newTeacherUser,
           school: newTeacherSchool || teacher.school,
           role: 'TEACHER',
-          gradeLevel: newTeacherGrade 
+          gradeLevel: gradeLevelString
       };
 
       if (newTeacherPass) {
@@ -419,7 +452,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
           setNewTeacherUser(''); 
           setNewTeacherPass(''); 
           if(!selectedSchoolForView) setNewTeacherSchool(''); // Keep school if in view mode
-          setNewTeacherGrade('ALL');
+          setNewTeacherGrades(['ALL']);
           setEditingTeacherId(null);
           loadData();
       } else {
@@ -433,7 +466,14 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       setNewTeacherUser(t.username || '');
       setNewTeacherPass(''); // Don't show password for security
       setNewTeacherSchool(t.school);
-      setNewTeacherGrade(t.gradeLevel || 'ALL'); 
+      
+      // ✅ Parse comma separated grades
+      if (t.gradeLevel) {
+          setNewTeacherGrades(t.gradeLevel.split(',').map(g => g.trim()));
+      } else {
+          setNewTeacherGrades(['ALL']);
+      }
+
       document.getElementById('teacher-form')?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -449,6 +489,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
     if (!newStudentName) return;
     setIsSaving(true);
     
+    // Use selected assignGrade from state (default to first managed grade) as fallback
+    // Or userGradeLevel logic if simple
+    const studentGrade = canManageAll ? 'P6' : (myGrades[0] || 'P6');
+
     if (editingStudentId) {
         // Edit Mode
         const result = await manageStudent({
@@ -457,7 +501,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             name: newStudentName,
             avatar: newStudentAvatar,
             school: teacher.school,
-            grade: userGradeLevel,
+            grade: studentGrade,
             teacherId: normalizeId(teacher.id)
         });
 
@@ -477,7 +521,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             name: newStudentName, 
             school: teacher.school, 
             avatar: newStudentAvatar,
-            grade: userGradeLevel,
+            grade: studentGrade,
             teacherId: normalizeId(teacher.id)
         });
 
@@ -828,7 +872,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
           <div className="opacity-90 text-sm mt-1 flex gap-2 items-center">
              <span>{teacher.school} • คุณครู{teacher.name}</span>
              <span className={`px-2 py-0.5 rounded text-xs font-bold ${canManageAll ? 'bg-yellow-400 text-yellow-900' : 'bg-green-400 text-green-900'}`}>
-                 {canManageAll ? 'ดูแลทุกชั้น' : `ประจำชั้น ${teacher.gradeLevel}`}
+                 {canManageAll ? 'ดูแลทุกชั้น' : `ดูแล ${myGrades.join(', ')}`}
              </span>
           </div>
         </div>
@@ -852,7 +896,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 onClick={() => { setActiveTab('profile'); setProfileName(teacher.name); setProfilePassword(''); setProfileConfirmPass(''); }} 
             />
 
-            {/* ✅ P-Chat (O-NET) Button: Visible only to P6, M3, and Admin */}
+            {/* ✅ P-Chat (O-NET) Button: Visible only if permission allows */}
             {canAccessOnet && (
             <MenuCard 
                 icon={<Trophy size={40} />} 
@@ -1099,7 +1143,11 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                                 {GRADES.map(g => <option key={g} value={g}>{GRADE_LABELS[g]}</option>)}
                                             </select>
                                         ) : (
-                                            <div className="w-full p-2.5 rounded-lg border border-gray-200 bg-gray-100 text-gray-600 font-bold flex items-center">{GRADE_LABELS[assignGrade] || assignGrade}</div>
+                                            <select value={assignGrade} onChange={(e) => setAssignGrade(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white outline-none">
+                                                {myGrades.map(g => (
+                                                    <option key={g} value={g}>{GRADE_LABELS[g] || g}</option>
+                                                ))}
+                                            </select>
                                         )}
                                     </div>
                                     <div>
@@ -1308,7 +1356,11 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                     {GRADES.map(g=><option key={g} value={g}>{GRADE_LABELS[g]}</option>)}
                                 </select>
                             ) : (
-                                <div className="w-full p-2 rounded-lg border border-gray-200 bg-gray-100 text-gray-600 font-bold">{GRADE_LABELS[qGrade] || qGrade}</div>
+                                <select value={qGrade} onChange={(e)=>setQGrade(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
+                                    {myGrades.map(g => (
+                                        <option key={g} value={g}>{GRADE_LABELS[g] || g}</option>
+                                    ))}
+                                </select>
                             )}
                          </div>
                       </div>
@@ -1536,19 +1588,32 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                         <label className="text-xs font-bold text-gray-500 block mb-1">Password {editingTeacherId && '(เว้นว่างถ้าไม่เปลี่ยน)'}</label>
                                         <input type="text" value={newTeacherPass} onChange={e => setNewTeacherPass(e.target.value)} className="w-full p-2 border rounded-lg bg-white" placeholder={editingTeacherId ? "เว้นว่างไว้หากไม่เปลี่ยน" : "กำหนดรหัสผ่าน"} />
                                     </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 block mb-1">ระดับชั้นที่ดูแล</label>
-                                        <select value={newTeacherGrade} onChange={(e) => setNewTeacherGrade(e.target.value)} className="w-full p-2 border rounded-lg bg-white outline-none">
-                                            <option value="ALL">ทุกระดับชั้น (Admin/Director)</option>
+                                    <div className="col-span-2 md:col-span-1">
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">ระดับชั้นที่ดูแล (เลือกได้มากกว่า 1)</label>
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {/* ALL Button */}
+                                            <button 
+                                                onClick={() => toggleTeacherGrade('ALL')}
+                                                className={`px-2 py-1.5 text-xs font-bold rounded border transition ${newTeacherGrades.includes('ALL') ? 'bg-black text-white border-black' : 'bg-white text-gray-500'}`}
+                                            >
+                                                ทุกชั้น
+                                            </button>
+                                            {/* Grades */}
                                             {GRADES.map(g => (
-                                                <option key={g} value={g}>{GRADE_LABELS[g]}</option>
+                                                <button 
+                                                    key={g}
+                                                    onClick={() => toggleTeacherGrade(g)}
+                                                    className={`px-2 py-1.5 text-xs font-bold rounded border transition ${newTeacherGrades.includes(g) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500'}`}
+                                                >
+                                                    {GRADE_LABELS[g]}
+                                                </button>
                                             ))}
-                                        </select>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
                                     {editingTeacherId && (
-                                        <button onClick={() => { setEditingTeacherId(null); setNewTeacherName(''); setNewTeacherUser(''); setNewTeacherPass(''); setNewTeacherGrade('ALL'); }} className="px-6 py-2 bg-gray-200 rounded-lg font-bold text-gray-600 hover:bg-gray-300">ยกเลิก</button>
+                                        <button onClick={() => { setEditingTeacherId(null); setNewTeacherName(''); setNewTeacherUser(''); setNewTeacherPass(''); setNewTeacherGrades(['ALL']); }} className="px-6 py-2 bg-gray-200 rounded-lg font-bold text-gray-600 hover:bg-gray-300">ยกเลิก</button>
                                     )}
                                     <button onClick={handleSaveTeacher} disabled={isProcessing} className={`flex-1 text-white py-2 rounded-lg font-bold shadow transition ${editingTeacherId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-gray-800 hover:bg-black'}`}>
                                         {isProcessing ? 'กำลังบันทึก...' : (editingTeacherId ? 'บันทึกการแก้ไข' : '+ เพิ่มบัญชีครู')}
@@ -1560,7 +1625,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                 <div className="p-4 bg-gray-100 font-bold text-gray-600 border-b">รายชื่อครู ({allTeachers.filter(t => t.school === selectedSchoolForView).length})</div>
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-gray-50 text-gray-500">
-                                        <tr><th className="p-3">ชื่อ</th><th className="p-3">Username</th><th className="p-3">ชั้น</th><th className="p-3 text-right">จัดการ</th></tr>
+                                        <tr><th className="p-3">ชื่อ</th><th className="p-3">Username</th><th className="p-3">ชั้นที่ดูแล</th><th className="p-3 text-right">จัดการ</th></tr>
                                     </thead>
                                     <tbody>
                                         {allTeachers.filter(t => t.school === selectedSchoolForView).map(t => (
@@ -1568,9 +1633,14 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                                 <td className="p-3 font-bold">{t.name} {t.role === 'ADMIN' && <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1 rounded ml-1">ADMIN</span>}</td>
                                                 <td className="p-3 font-mono text-gray-500">{t.username}</td>
                                                 <td className="p-3 text-gray-600">
-                                                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${!t.gradeLevel || t.gradeLevel === 'ALL' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
-                                                        {(!t.gradeLevel || t.gradeLevel === 'ALL') ? 'ทุกชั้น' : GRADE_LABELS[t.gradeLevel] || t.gradeLevel}
-                                                    </span>
+                                                    <div className="flex flex-wrap gap-1">
+                                                    {(!t.gradeLevel || t.gradeLevel === 'ALL') 
+                                                        ? <span className="px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700">ทุกชั้น</span>
+                                                        : t.gradeLevel.split(',').map(g => (
+                                                            <span key={g} className="px-2 py-0.5 rounded text-xs font-bold bg-gray-100 text-gray-600">{GRADE_LABELS[g.trim()] || g}</span>
+                                                        ))
+                                                    }
+                                                    </div>
                                                 </td>
                                                 <td className="p-3 text-right">
                                                     {String(t.id) !== String(teacher.id) && t.role !== 'ADMIN' && (
