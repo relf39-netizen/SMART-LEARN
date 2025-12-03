@@ -122,6 +122,7 @@ export const getSchools = async (): Promise<School[]> => {
     const snapshot = await db.ref('schools').once('value');
     const schools = snapshotToArray<School>(snapshot);
 
+    // Also fetch schools from teachers to support legacy data
     const teachersSnap = await db.ref('teachers').once('value');
     const teachers = snapshotToArray<Teacher>(teachersSnap);
     
