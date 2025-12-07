@@ -223,14 +223,17 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   }, [activeTab, qBankSubject]);
   
   // ✅ Fetch School Stats when Admin Monitor tab is active
-  useEffect(() => {
-      const fetchStats = async () => {
-          if (activeTab === 'monitor' && isAdmin) {
-              const data = await getAllSchoolStats();
-              setSchoolStats(data);
-          }
+  const fetchMonitorStats = async () => {
+      if (isAdmin) {
+          const data = await getAllSchoolStats();
+          setSchoolStats(data);
       }
-      fetchStats();
+  };
+
+  useEffect(() => {
+      if (activeTab === 'monitor') {
+          fetchMonitorStats();
+      }
   }, [activeTab, isAdmin]);
 
   const loadData = async () => {
@@ -672,11 +675,36 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
             {/* ✅ SYSTEM MONITOR TAB */}
             {activeTab === 'monitor' && isAdmin && (
                 <div className="max-w-6xl mx-auto">
-                    <div className="flex items-center gap-3 mb-8">
-                        <div className="bg-slate-700 p-3 rounded-full text-white"><MonitorSmartphone size={32}/></div>
-                        <div>
-                            <h3 className="text-2xl font-bold text-gray-800">System Monitor (ระบบติดตามการใช้งาน)</h3>
-                            <p className="text-gray-500">ตรวจสอบปริมาณการใช้งานของแต่ละโรงเรียน (Real-time)</p>
+                    <div className="flex justify-between items-center mb-8">
+                         <div className="flex items-center gap-3">
+                            <div className="bg-slate-700 p-3 rounded-full text-white"><MonitorSmartphone size={32}/></div>
+                            <div>
+                                <h3 className="text-2xl font-bold text-gray-800">System Monitor (ระบบติดตามการใช้งาน)</h3>
+                                <p className="text-gray-500">ตรวจสอบปริมาณการใช้งานของแต่ละโรงเรียน (Real-time)</p>
+                            </div>
+                         </div>
+                         <button onClick={fetchMonitorStats} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition">
+                             <RefreshCw size={18}/> รีเฟรชข้อมูลล่าสุด
+                         </button>
+                    </div>
+
+                    {/* Summary Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                            <div className="text-blue-500 text-sm font-bold uppercase">โรงเรียนที่ใช้งาน</div>
+                            <div className="text-3xl font-black text-blue-700">{schoolStats.length} แห่ง</div>
+                        </div>
+                        <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                            <div className="text-green-500 text-sm font-bold uppercase">ยอดเข้าสู่ระบบรวม (ครั้ง)</div>
+                            <div className="text-3xl font-black text-green-700">
+                                {schoolStats.reduce((sum, s) => sum + (s.loginCount || 0), 0).toLocaleString()}
+                            </div>
+                        </div>
+                        <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
+                            <div className="text-purple-500 text-sm font-bold uppercase">ยอดทำกิจกรรมรวม (ครั้ง)</div>
+                            <div className="text-3xl font-black text-purple-700">
+                                {schoolStats.reduce((sum, s) => sum + (s.activityCount || 0), 0).toLocaleString()}
+                            </div>
                         </div>
                     </div>
 
