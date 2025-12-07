@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
-import { Teacher, Student, Subject, Assignment, Question, SubjectConfig, School, RegistrationRequest } from '../types';
-import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, Users, GraduationCap, Trash2, Edit, Shield, UserCog, KeyRound, Sparkles, Wand2, Key, HelpCircle, ChevronDown, ChevronUp, Layers, Clock, Library, Palette, Type, AlertCircle, ArrowRight, BrainCircuit, List, CheckSquare, Trophy, Lock, User, Activity, Building, CreditCard, Check, ToggleLeft, ToggleRight, Search } from 'lucide-react';
-import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, editQuestion, manageTeacher, getAllTeachers, deleteQuestion, deleteAssignment, getSubjects, addSubject, deleteSubject, getSchools, manageSchool, getRegistrationStatus, toggleRegistrationStatus, getPendingRegistrations, approveRegistration, rejectRegistration, verifyStudentLogin } from '../services/api';
+import { Teacher, Student, Assignment, Question, SubjectConfig, School, RegistrationRequest } from '../types';
+import { UserPlus, BarChart2, FileText, LogOut, Save, RefreshCw, Gamepad2, Calendar, Eye, CheckCircle, X, PlusCircle, ChevronLeft, ChevronRight, Book, Calculator, FlaskConical, Languages, ArrowLeft, ArrowRight, Users, GraduationCap, Trash2, Edit, UserCog, KeyRound, Sparkles, Wand2, Key, Layers, Library, BrainCircuit, List, Trophy, User, Activity, Building, CreditCard, Search, Loader2, Clock } from 'lucide-react';
+import { getTeacherDashboard, manageStudent, addAssignment, addQuestion, editQuestion, manageTeacher, getAllTeachers, deleteQuestion, deleteAssignment, getSubjects, addSubject, deleteSubject, getSchools, manageSchool, getRegistrationStatus, toggleRegistrationStatus, getPendingRegistrations, approveRegistration, rejectRegistration, verifyStudentLogin, getQuestionsBySubject } from '../services/api';
 import { generateQuestionWithAI, GeneratedQuestion } from '../services/aiService';
 
 interface TeacherDashboardProps {
@@ -17,7 +18,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [students, setStudents] = useState<Student[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [stats, setStats] = useState<any[]>([]);
+  
+  // ✅ Questions are loaded on demand to save bandwidth
   const [questions, setQuestions] = useState<Question[]>([]); 
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Subject Management
@@ -36,7 +40,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [newTeacherUser, setNewTeacherUser] = useState('');
   const [newTeacherPass, setNewTeacherPass] = useState('');
   const [newTeacherSchool, setNewTeacherSchool] = useState('');
-  // ✅ Changed: Support multiple grades for teacher creation
   const [newTeacherGrades, setNewTeacherGrades] = useState<string[]>(['ALL']); 
   const [newTeacherRole, setNewTeacherRole] = useState<string>('TEACHER'); // Default role
   const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null); 
@@ -48,7 +51,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [approveToSchool, setApproveToSchool] = useState('');
 
   // Profile Management State
-  const [profileName, setProfileName] = useState(teacher.name);
+  const [profileName, setProfileName] = useState(teacher.name || '');
   const [profilePassword, setProfilePassword] = useState('');
   const [profileConfirmPass, setProfileConfirmPass] = useState('');
 
@@ -69,7 +72,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const isDirector = teacher.role === 'DIRECTOR';
   
   // Director can manage all, just like someone with 'ALL' grade
-  const canManageAll = myGrades.includes('ALL') || isDirector;
+  const canManageAll = myGrades.includes('ALL') || isDirector || isAdmin;
 
   // ✅ New Logic: O-NET Access (If teaches P6, M3, or is Admin/Director)
   const canAccessOnet = canManageAll || myGrades.includes('P6') || myGrades.includes('M3');
@@ -89,7 +92,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   const [assignStep, setAssignStep] = useState<1 | 2>(1); // 1: Info, 2: AI Generation
   const [assignTitle, setAssignTitle] = useState('');
   const [assignSubject, setAssignSubject] = useState<string>(''); // Dynamic Subject
-  // Default assign grade to first available grade or ALL
   const [assignGrade, setAssignGrade] = useState<string>(canManageAll ? 'ALL' : (myGrades[0] || 'P6')); 
   const [assignCount, setAssignCount] = useState(10);
   const [assignDeadline, setAssignDeadline] = useState('');
@@ -132,8 +134,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   // O-NET View State
   const [onetSubjectFilter, setOnetSubjectFilter] = useState<string>('ALL');
   
-  // ✅ P-Chat (O-NET) Auto Select Grade Logic
-  // Check if teacher has specific O-NET grades
   const hasP6 = myGrades.includes('P6');
   const hasM3 = myGrades.includes('M3');
   
@@ -143,7 +143,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   
   const [onetLevel, setOnetLevel] = useState<string | null>(defaultOnet); 
 
-  // ✅ Updated GRADES constant to include M1-M3
   const GRADES = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'M1', 'M2', 'M3'];
   const GRADE_LABELS: Record<string, string> = { 
       'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6', 
@@ -152,7 +151,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
   
   const ONET_SUBJECTS = ['คณิตศาสตร์', 'ภาษาไทย', 'วิทยาศาสตร์', 'ภาษาอังกฤษ'];
 
-  // Icon options for Subjects
   const SUBJECT_ICONS = [
       { name: 'Book', component: <Book /> },
       { name: 'Calculator', component: <Calculator /> },
@@ -187,43 +185,62 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
 
   useEffect(() => {
       if (!canManageAll && myGrades.length > 0) {
-          // Default to first grade if available
           const defaultGrade = myGrades[0];
           setAssignGrade(defaultGrade);
           setQGrade(defaultGrade);
           
-          // Logic for O-NET level handled in state init, but double check
           if (hasP6 && !hasM3) setOnetLevel('P6');
           else if (!hasP6 && hasM3) setOnetLevel('M3');
       }
   }, [teacher]);
 
-  // Update profile name when prop changes
   useEffect(() => {
-      setProfileName(teacher.name);
+      setProfileName(teacher.name || '');
   }, [teacher]);
+
+  // ✅ Lazy Loading for Questions when switching tabs/filtering
+  useEffect(() => {
+      const fetchQuestions = async () => {
+          if (activeTab === 'questions' && qBankSubject) {
+              setLoadingQuestions(true);
+              try {
+                  const data = await getQuestionsBySubject(qBankSubject);
+                  setQuestions(data);
+              } catch (e) {
+                  console.error("Failed to load questions", e);
+              } finally {
+                  setLoadingQuestions(false);
+              }
+          } else if (activeTab === 'questions' && !qBankSubject) {
+              setQuestions([]); // Clear if no subject
+          }
+      };
+      fetchQuestions();
+  }, [activeTab, qBankSubject]);
 
   const loadData = async () => {
     setLoading(true);
     const data = await getTeacherDashboard(teacher.school);
     const subs = await getSubjects(teacher.school);
     
-    // Load teachers and schools if admin
+    // Ensure Admin Data Loads Correctly
     if (isAdmin) {
-        const tList = await getAllTeachers();
-        setAllTeachers(tList);
-        const sList = await getSchools();
-        setSchools(sList);
-        const regStatus = await getRegistrationStatus();
-        setRegEnabled(regStatus);
-        const pending = await getPendingRegistrations();
-        setPendingRegs(pending);
+        try {
+            const tList = await getAllTeachers();
+            setAllTeachers(tList);
+            const sList = await getSchools();
+            setSchools(sList);
+            const regStatus = await getRegistrationStatus();
+            setRegEnabled(regStatus);
+            const pending = await getPendingRegistrations();
+            setPendingRegs(pending);
+        } catch (e) {
+            console.error("Admin data load error", e);
+        }
     }
     
-    // ✅ Relaxed Subject Filtering: Show all subjects for school/grade
     const filteredSubjects = subs.filter(s => {
         if (canManageAll) return true;
-        // Show subject if it matches ANY of the teacher's grades OR if created by teacher
         return myGrades.includes(s.grade) || s.teacherId === normalizeId(teacher.id) || s.grade === 'ALL';
     });
 
@@ -234,611 +251,199 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         setQSubject(filteredSubjects[0].name);
     }
 
-    // ✅ FIXED: Filter students based on Multi-Grade Logic
     const myStudents = (data.students || []).filter((s: Student) => {
         const sSchool = String(s.school || '').trim();
         const tSchool = String(teacher.school || '').trim();
-        
-        // Basic School Match
         if (sSchool !== tSchool) return false;
-        
-        // Grade Match (multi-grade support)
         if (!canManageAll) {
             return myGrades.includes(s.grade || '');
         }
-        
         return true; 
     });
     
     setStudents(myStudents);
     setStats(data.results || []);
     setAssignments(data.assignments || []); 
-    setQuestions(data.questions || []); 
     
     setLoading(false);
   };
-
-  // --- Helpers for Stats ---
+  
   const getStudentOverallStats = (studentId: string) => {
     const studentResults = stats.filter(r => String(r.studentId) === String(studentId));
     const attempts = studentResults.length;
     let average = 0;
-    
     if (attempts > 0) {
         const sum = studentResults.reduce((acc, curr) => {
             const totalQ = Number(curr.totalQuestions);
             const score = Number(curr.score) || 0;
-            if (totalQ > 0) {
-                return acc + ((score / totalQ) * 100);
-            }
+            if (totalQ > 0) return acc + ((score / totalQ) * 100);
             return acc;
         }, 0);
         average = Math.round(sum / attempts);
     }
-    
     return { attempts, average: (isNaN(average) || !isFinite(average)) ? 0 : average };
   };
 
   const getStudentSubjectStats = (studentId: string) => {
     const studentResults = stats.filter(r => String(r.studentId) === String(studentId));
     const subjectsMap: any = {};
-    
     studentResults.forEach(r => {
-        if (!subjectsMap[r.subject]) {
-            subjectsMap[r.subject] = { name: r.subject, attempts: 0, totalScore: 0 };
-        }
-        
+        if (!subjectsMap[r.subject]) subjectsMap[r.subject] = { name: r.subject, attempts: 0, totalScore: 0 };
         const totalQ = Number(r.totalQuestions);
         const score = Number(r.score) || 0;
-        
-        if (totalQ > 0) {
-            subjectsMap[r.subject].totalScore += (score / totalQ) * 100;
-        }
+        if (totalQ > 0) subjectsMap[r.subject].totalScore += (score / totalQ) * 100;
         subjectsMap[r.subject].attempts++;
     });
-    
     return Object.values(subjectsMap).map((s:any) => {
         let avg = s.attempts > 0 ? Math.round(s.totalScore / s.attempts) : 0;
         if (isNaN(avg) || !isFinite(avg)) avg = 0;
-        return {
-            ...s,
-            average: avg
-        };
+        return { ...s, average: avg };
     });
-  };
-
-  // --- Admin Stats Handlers ---
-  const handleImpersonate = async () => {
-    if (!impersonateId) return alert('กรุณากรอกรหัสนักเรียน');
-    if (impersonateId.length !== 5) return alert('รหัสนักเรียนต้องมี 5 หลัก');
-    
-    setIsProcessing(true);
-    setProcessingMessage('กำลังค้นหานักเรียน...');
-    
-    // 1. Search in loaded students first
-    let target = students.find(s => s.id === impersonateId);
-    
-    // 2. If not found, try API directly
-    if (!target) {
-        const found = await verifyStudentLogin(impersonateId);
-        if (found) target = found;
-    }
-    setIsProcessing(false);
-
-    if (target) {
-        if (confirm(`เข้าสู่หน้าจอของนักเรียน: ${target.name} (${target.id})?`)) {
-            onAdminLoginAsStudent(target);
-        }
-    } else {
-        alert('ไม่พบข้อมูลนักเรียนรหัสนี้');
-    }
   };
 
   const getGradeStats = (grade: string) => {
       const gradeStudents = students.filter(s => s.grade === grade);
       const studentIds = gradeStudents.map(s => s.id);
       const gradeResults = stats.filter(r => studentIds.includes(String(r.studentId)));
-      
-      let totalScorePercent = 0;
-      let count = 0;
+      let totalScorePercent = 0; let count = 0;
       gradeResults.forEach(r => {
-          const totalQ = Number(r.totalQuestions);
-          const score = Number(r.score) || 0;
-          if (totalQ > 0) {
-              totalScorePercent += (score / totalQ) * 100;
-              count++;
-          }
+          const totalQ = Number(r.totalQuestions); const score = Number(r.score) || 0;
+          if (totalQ > 0) { totalScorePercent += (score / totalQ) * 100; count++; }
       });
-      
       const avg = count > 0 ? Math.round(totalScorePercent / count) : 0;
-      return {
-          studentCount: gradeStudents.length,
-          avgScore: avg,
-          activityCount: count
-      };
+      return { studentCount: gradeStudents.length, avgScore: avg, activityCount: count };
   };
 
-  // Calculate Average Score for a specific Subject in a specific Grade
   const getSubjectGradeAverage = (subjectName: string, grade: string) => {
       const gradeStudents = students.filter(s => s.grade === grade).map(s => s.id);
       const subjectResults = stats.filter(r => r.subject === subjectName && gradeStudents.includes(String(r.studentId)));
-      
-      let totalPercent = 0;
-      let count = 0;
+      let totalPercent = 0; let count = 0;
       subjectResults.forEach(r => {
-          const totalQ = Number(r.totalQuestions);
-          const score = Number(r.score) || 0;
-          if(totalQ > 0) {
-              totalPercent += (score / totalQ) * 100;
-              count++;
-          }
+          const totalQ = Number(r.totalQuestions); const score = Number(r.score) || 0;
+          if(totalQ > 0) { totalPercent += (score / totalQ) * 100; count++; }
       });
       return count > 0 ? Math.round(totalPercent / count) : 0;
   };
 
-  // --- Handlers ---
+  const handleImpersonate = async () => {
+    if (!impersonateId) return alert('กรุณากรอกรหัสนักเรียน');
+    if (impersonateId.length !== 5) return alert('รหัสนักเรียนต้องมี 5 หลัก');
+    setIsProcessing(true);
+    let target = students.find(s => s.id === impersonateId);
+    if (!target) { const found = await verifyStudentLogin(impersonateId); if (found) target = found; }
+    setIsProcessing(false);
+    if (target) { if (confirm(`เข้าสู่หน้าจอของนักเรียน: ${target.name} (${target.id})?`)) onAdminLoginAsStudent(target); } 
+    else alert('ไม่พบข้อมูลนักเรียนรหัสนี้');
+  };
 
   const handleUpdateProfile = async () => {
       if (!profileName) return alert('กรุณากรอกชื่อ');
       if (profilePassword && profilePassword !== profileConfirmPass) return alert('รหัสผ่านไม่ตรงกัน');
-      
       setIsProcessing(true);
-      const res = await manageTeacher({
-          action: 'edit',
-          id: String(teacher.id),
-          name: profileName,
-          password: profilePassword || undefined,
-      });
+      const res = await manageTeacher({ action: 'edit', id: String(teacher.id), name: profileName, password: profilePassword || undefined });
       setIsProcessing(false);
-      
-      if (res.success) {
-          alert('✅ บันทึกข้อมูลเรียบร้อย (กรุณาเข้าสู่ระบบใหม่เพื่อเห็นการเปลี่ยนแปลง)');
-          setProfilePassword('');
-          setProfileConfirmPass('');
-      } else {
-          alert('เกิดข้อผิดพลาด: ' + (res.message || 'Unknown error'));
-      }
+      if (res.success) { alert('✅ บันทึกข้อมูลเรียบร้อย (กรุณาเข้าสู่ระบบใหม่เพื่อเห็นการเปลี่ยนแปลง)'); setProfilePassword(''); setProfileConfirmPass(''); } 
+      else alert('เกิดข้อผิดพลาด: ' + (res.message || 'Unknown error'));
   };
 
-  // --- School Handlers ---
-  const handleAddSchool = async () => {
-      if (!newSchoolName) return;
-      setIsProcessing(true);
-      await manageSchool({ action: 'add', name: newSchoolName });
-      setIsProcessing(false);
-      setNewSchoolName('');
-      loadData();
+  const handleAddSchool = async () => { if (!newSchoolName) return; setIsProcessing(true); await manageSchool({ action: 'add', name: newSchoolName }); setIsProcessing(false); setNewSchoolName(''); loadData(); };
+  const handleDeleteSchool = async (id: string) => { if (!confirm('ลบโรงเรียนนี้?')) return; await manageSchool({ action: 'delete', id }); loadData(); }
+  const handleToggleReg = async () => { const newState = !regEnabled; setRegEnabled(newState); await toggleRegistrationStatus(newState); };
+  const handleApproveReg = async () => { if (!showApproveModal || !approveToSchool) return alert('เลือกโรงเรียนก่อนอนุมัติ'); setIsProcessing(true); const success = await approveRegistration(showApproveModal, approveToSchool); setIsProcessing(false); if (success) { alert('✅ อนุมัติเรียบร้อย รหัสผ่านคือ 123456'); setShowApproveModal(null); setApproveToSchool(''); loadData(); } else { alert('เกิดข้อผิดพลาด'); } };
+  const handleRejectReg = async (id: string) => { if (!confirm('ปฏิเสธคำขอนี้?')) return; await rejectRegistration(id); loadData(); };
+  const handleAddSubject = async () => { if (!newSubjectName) return alert('กรุณากรอกชื่อวิชา'); setIsProcessing(true); const newSub: SubjectConfig = { id: Date.now().toString(), name: newSubjectName, school: teacher.school, teacherId: normalizeId(teacher.id), grade: canManageAll ? 'ALL' : (myGrades[0] || 'ALL'), icon: newSubjectIcon, color: newSubjectColor }; const success = await addSubject(teacher.school, newSub); setIsProcessing(false); if (success) { alert('✅ เพิ่มวิชาเรียบร้อย'); setNewSubjectName(''); loadData(); } else { alert('เกิดข้อผิดพลาด'); } };
+  const handleDeleteSubject = async (subId: string) => { if (!confirm('ยืนยันการลบวิชานี้?')) return; setIsProcessing(true); await deleteSubject(teacher.school, subId); setIsProcessing(false); loadData(); };
+  const toggleTeacherGrade = (grade: string) => { setNewTeacherGrades(prev => { if (grade === 'ALL') return ['ALL']; let newGrades = prev.filter(g => g !== 'ALL'); if (newGrades.includes(grade)) { newGrades = newGrades.filter(g => g !== grade); } else { newGrades.push(grade); } if (newGrades.length === 0) return ['ALL']; return newGrades; }); };
+  const handleSaveTeacher = async () => { if (!newTeacherName || !newTeacherUser) return alert('กรุณากรอกชื่อและ Username'); if (!editingTeacherId && !newTeacherPass) return alert('กรุณากำหนดรหัสผ่านสำหรับบัญชีใหม่'); setIsProcessing(true); const gradeLevelString = newTeacherGrades.join(','); const teacherData: any = { action: editingTeacherId ? 'edit' : 'add', id: editingTeacherId || undefined, name: newTeacherName, username: newTeacherUser, school: newTeacherSchool || teacher.school, role: newTeacherRole, gradeLevel: gradeLevelString }; if (newTeacherPass) teacherData.password = newTeacherPass; const res = await manageTeacher(teacherData); setIsProcessing(false); if (res.success) { alert(editingTeacherId ? '✅ แก้ไขข้อมูลบุคลากรเรียบร้อย' : '✅ เพิ่มบัญชีบุคลากรเรียบร้อย'); setNewTeacherName(''); setNewTeacherUser(''); setNewTeacherPass(''); if(!selectedSchoolForView) setNewTeacherSchool(''); setNewTeacherGrades(['ALL']); setNewTeacherRole('TEACHER'); setEditingTeacherId(null); loadData(); } else { alert('เกิดข้อผิดพลาด: ' + (res.message || 'Unknown error')); } };
+  const handleEditTeacher = (t: Teacher) => { setEditingTeacherId(String(t.id)); setNewTeacherName(t.name); setNewTeacherUser(t.username || ''); setNewTeacherPass(''); setNewTeacherSchool(t.school); setNewTeacherRole(t.role || 'TEACHER'); if (t.gradeLevel) { setNewTeacherGrades(t.gradeLevel.split(',').map(g => g.trim())); } else { setNewTeacherGrades(['ALL']); } document.getElementById('teacher-form')?.scrollIntoView({ behavior: 'smooth' }); };
+  const handleDeleteTeacher = async (id: string) => { if (!confirm('ยืนยันลบข้อมูลครูท่านนี้?')) return; setIsProcessing(true); await manageTeacher({ action: 'delete', id }); setIsProcessing(false); loadData(); };
+  const handleSaveStudent = async () => { if (!newStudentName) return; setIsSaving(true); const studentGrade = canManageAll ? 'P6' : (myGrades[0] || 'P6'); if (editingStudentId) { const result = await manageStudent({ action: 'edit', id: editingStudentId, name: newStudentName, avatar: newStudentAvatar, school: teacher.school, grade: studentGrade, teacherId: normalizeId(teacher.id) }); if (result.success) { setStudents(prev => prev.map(s => s.id === editingStudentId ? { ...s, name: newStudentName, avatar: newStudentAvatar } : s)); setNewStudentName(''); setEditingStudentId(null); alert('✅ แก้ไขข้อมูลเรียบร้อย'); } else { alert('เกิดข้อผิดพลาดในการแก้ไข'); } } else { const result = await manageStudent({ action: 'add', name: newStudentName, school: teacher.school, avatar: newStudentAvatar, grade: studentGrade, teacherId: normalizeId(teacher.id) }); if (result.success && result.student) { setCreatedStudent(result.student); setStudents([...students, result.student]); setNewStudentName(''); } else { alert('เกิดข้อผิดพลาดในการบันทึก'); } } setIsSaving(false); };
+  const handleEditStudent = (s: Student) => { setEditingStudentId(s.id); setNewStudentName(s.name); setNewStudentAvatar(s.avatar); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const handleCancelEdit = () => { setEditingStudentId(null); setNewStudentName(''); setNewStudentAvatar('👦'); };
+  const handleDeleteStudent = async (id: string) => { if (isDirector) return alert("ผู้อำนวยการไม่สามารถลบนักเรียนได้"); if (!confirm('ยืนยันการลบนักเรียนคนนี้? ข้อมูลคะแนนจะหายไปทั้งหมด')) return; setIsProcessing(true); const result = await manageStudent({ action: 'delete', id }); setIsProcessing(false); if (result.success) { setStudents(prev => prev.filter(s => s.id !== id)); } else { alert('ลบไม่สำเร็จ'); } };
+  const handleAiError = (e: any) => { console.error("AI Error:", e); alert("เกิดข้อผิดพลาด: " + (e?.message || JSON.stringify(e))); };
+  
+  const handleAssignGenerateQuestions = async () => { if (!geminiApiKey) return alert("กรุณาใส่ API Key"); if (!assignAiTopic) return alert("กรุณาระบุหัวข้อ"); setIsGeneratingAi(true); try { const generated = await generateQuestionWithAI(assignSubject, assignGrade, assignAiTopic, geminiApiKey, 5); if (generated) setNewlyGeneratedQuestions(prev => [...prev, ...generated]); } catch (e) { handleAiError(e); } finally { setIsGeneratingAi(false); } };
+  const handleOnetGenerateQuestions = async () => { if (!geminiApiKey) return alert("กรุณาใส่ API Key"); if (!assignAiTopic) return alert("กรุณาระบุสาระ"); const gradeToGen = onetLevel || 'P6'; setIsGeneratingAi(true); try { const generated = await generateQuestionWithAI(assignSubject, gradeToGen, assignAiTopic, geminiApiKey, 5, 'onet'); if (generated) setNewlyGeneratedQuestions(prev => [...prev, ...generated]); } catch (e) { handleAiError(e); } finally { setIsGeneratingAi(false); } };
+  const handleFinalizeAssignment = async () => { if (newlyGeneratedQuestions.length > 0) { setIsProcessing(true); const tid = normalizeId(teacher.id); for (const q of newlyGeneratedQuestions) { await addQuestion({ subject: assignSubject, grade: assignGrade, text: q.text, image: q.image || '', c1: q.c1, c2: q.c2, c3: q.c3, c4: q.c4, correct: q.correct, explanation: q.explanation, school: teacher.school, teacherId: tid }); } } setIsProcessing(true); let finalTitle = assignTitle; if (activeTab === 'onet') { if (!finalTitle) finalTitle = `[O-NET] ฝึกฝน${assignSubject} เรื่อง ${assignAiTopic || 'ทั่วไป'}`; else if (!finalTitle.startsWith('[O-NET]')) finalTitle = `[O-NET] ${finalTitle}`; } else { if (!finalTitle) finalTitle = `การบ้าน ${assignSubject}`; } const success = await addAssignment(teacher.school, assignSubject, assignGrade, assignCount, assignDeadline, teacher.name, finalTitle); setIsProcessing(false); if (success) { alert('✅ สั่งการบ้านเรียบร้อยแล้ว'); setAssignStep(1); setAssignDeadline(''); setAssignTitle(''); setNewlyGeneratedQuestions([]); setAssignAiTopic(''); if (activeTab === 'onet') await loadData(); else { setActiveTab('assignments'); await loadData(); } } else { alert('เกิดข้อผิดพลาดในการสร้างการบ้าน'); } };
+  const handleDeleteAssignment = async (id: string) => { if (!confirm('ยืนยันลบการบ้านนี้?')) return; setIsProcessing(true); const success = await deleteAssignment(id); setIsProcessing(false); if (success) { setAssignments(prev => prev.filter(a => a.id !== id)); loadData(); } };
+  const handleViewAssignment = (a: Assignment) => { setSelectedAssignment(a); setAssignmentModalTab('status'); };
+
+  const handleSaveQuestion = async () => { if (!qText || !qChoices.c1 || !qChoices.c2 || !qSubject) return alert('กรุณากรอกข้อมูลให้ครบถ้วน'); const tid = normalizeId(teacher.id); setIsProcessing(true); const questionPayload = { id: editingQuestionId, subject: qSubject, grade: qGrade, text: qText, image: qImage, c1: qChoices.c1, c2: qChoices.c2, c3: qChoices.c3, c4: qChoices.c4, correct: qCorrect, explanation: qExplain, school: teacher.school, teacherId: tid }; let success = editingQuestionId ? await editQuestion(questionPayload) : await addQuestion(questionPayload); setIsProcessing(false); if (success) { alert('✅ บันทึกสำเร็จ'); setQText(''); setQChoices({c1:'', c2:'', c3:'', c4:''}); setEditingQuestionId(null); 
+     // Reload questions for current subject
+     if (activeTab === 'questions' && qBankSubject === qSubject) {
+         setLoadingQuestions(true);
+         const updated = await getQuestionsBySubject(qSubject);
+         setQuestions(updated);
+         setLoadingQuestions(false);
+     }
+  } else { alert('บันทึกไม่สำเร็จ'); } };
+  
+  const handleEditQuestion = (q: Question) => { setEditingQuestionId(q.id); setQSubject(q.subject); setQGrade(q.grade || 'P6'); setQText(q.text); setQImage(q.image || ''); setQCorrect(String(q.correctChoiceId)); setQExplain(q.explanation); setQChoices({ c1: q.choices[0]?.text || '', c2: q.choices[1]?.text || '', c3: q.choices[2]?.text || '', c4: q.choices[3]?.text || '' }); document.getElementById('question-form')?.scrollIntoView({ behavior: 'smooth' }); };
+  const handleDeleteQuestion = async (id: string) => { if(!confirm('ลบข้อสอบนี้?')) return; setIsProcessing(true); await deleteQuestion(id); setIsProcessing(false); 
+      // Reload
+     if (activeTab === 'questions' && qBankSubject) {
+         setLoadingQuestions(true);
+         const updated = await getQuestionsBySubject(qBankSubject);
+         setQuestions(updated);
+         setLoadingQuestions(false);
+     }
+  };
+  const handleAiGenerate = async () => { if (!aiTopic || !geminiApiKey) return alert("กรุณาระบุหัวข้อและ API Key"); setIsGeneratingAi(true); try { const generated = await generateQuestionWithAI(aiSourceMode === 'assignment' ? assignSubject : qSubject, aiSourceMode === 'assignment' ? assignGrade : qGrade, aiTopic, geminiApiKey, aiCount); if (generated) setAiPreviewQuestions(prev => [...prev, ...generated]); } catch (e) { handleAiError(e); } finally { setIsGeneratingAi(false); } };
+  const handleSaveAiQuestions = async () => { if (aiPreviewQuestions.length === 0) return; setIsProcessing(true); const targetSubject = aiSourceMode === 'assignment' ? assignSubject : qSubject; const targetGrade = aiSourceMode === 'assignment' ? assignGrade : qGrade; const tid = normalizeId(teacher.id); for (const q of aiPreviewQuestions) { await addQuestion({ subject: targetSubject, grade: targetGrade, text: q.text, image: q.image || '', c1: q.c1, c2: q.c2, c3: q.c3, c4: q.c4, correct: q.correct, explanation: q.explanation, school: teacher.school, teacherId: tid }); } setIsProcessing(false); alert(`✅ บันทึกสำเร็จ`); setAiPreviewQuestions([]); setShowAiModal(false); 
+      // Reload
+     if (activeTab === 'questions' && qBankSubject === targetSubject) {
+         setLoadingQuestions(true);
+         const updated = await getQuestionsBySubject(targetSubject);
+         setQuestions(updated);
+         setLoadingQuestions(false);
+     }
   };
 
-  const handleDeleteSchool = async (id: string) => {
-      if (!confirm('ลบโรงเรียนนี้?')) return;
-      await manageSchool({ action: 'delete', id });
-      loadData();
-  }
+  const formatDate = (dateString: string) => { if (!dateString) return '-'; const date = new Date(dateString); if (isNaN(date.getTime())) return dateString; return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }); };
+  const countSubmitted = (assignmentId: string) => { const submittedStudentIds = new Set(stats.filter(r => r.assignmentId === assignmentId).map(r => r.studentId)); return submittedStudentIds.size; };
 
-  // --- Registration Handlers ---
-  const handleToggleReg = async () => {
-      const newState = !regEnabled;
-      setRegEnabled(newState);
-      await toggleRegistrationStatus(newState);
-  };
-
-  const handleApproveReg = async () => {
-      if (!showApproveModal || !approveToSchool) return alert('เลือกโรงเรียนก่อนอนุมัติ');
-      setIsProcessing(true);
-      const success = await approveRegistration(showApproveModal, approveToSchool);
-      setIsProcessing(false);
-      if (success) {
-          alert('✅ อนุมัติเรียบร้อย รหัสผ่านคือ 123456');
-          setShowApproveModal(null);
-          setApproveToSchool('');
-          loadData();
-      } else {
-          alert('เกิดข้อผิดพลาด');
-      }
-  };
-
-  const handleRejectReg = async (id: string) => {
-      if (!confirm('ปฏิเสธคำขอนี้?')) return;
-      await rejectRegistration(id);
-      loadData();
-  };
-
-  // --- Subject Handlers ---
-  const handleAddSubject = async () => {
-      if (!newSubjectName) return alert('กรุณากรอกชื่อวิชา');
-      setIsProcessing(true);
-      const newSub: SubjectConfig = {
-          id: Date.now().toString(),
-          name: newSubjectName,
-          school: teacher.school,
-          teacherId: normalizeId(teacher.id),
-          // Default to first assigned grade or ALL
-          grade: canManageAll ? 'ALL' : (myGrades[0] || 'ALL'), 
-          icon: newSubjectIcon,
-          color: newSubjectColor
-      };
-      
-      const success = await addSubject(teacher.school, newSub);
-      setIsProcessing(false);
-      
-      if (success) {
-          alert('✅ เพิ่มวิชาเรียบร้อย');
-          setNewSubjectName('');
-          loadData();
-      } else {
-          alert('เกิดข้อผิดพลาด');
-      }
-  };
-
-  const handleDeleteSubject = async (subId: string) => {
-      if (!confirm('ยืนยันการลบวิชานี้?')) return;
-      setIsProcessing(true);
-      await deleteSubject(teacher.school, subId);
-      setIsProcessing(false);
-      loadData();
+  // ✅ Fix: Add getAssignmentQuestions helper
+  const getAssignmentQuestions = (a: Assignment | null) => {
+    if (!a) return [];
+    return questions.filter(q => 
+        q.subject === a.subject && 
+        (!a.grade || a.grade === 'ALL' || q.grade === a.grade || q.grade === 'ALL')
+    ).slice(0, a.questionCount);
   };
   
-  // Teacher Management Helpers
-  const toggleTeacherGrade = (grade: string) => {
-      setNewTeacherGrades(prev => {
-          if (grade === 'ALL') return ['ALL'];
-          let newGrades = prev.filter(g => g !== 'ALL');
-          if (newGrades.includes(grade)) {
-              newGrades = newGrades.filter(g => g !== grade);
-          } else {
-              newGrades.push(grade);
-          }
-          if (newGrades.length === 0) return ['ALL']; // Default fallback
-          return newGrades;
-      });
-  };
-
-  const handleSaveTeacher = async () => {
-      if (!newTeacherName || !newTeacherUser) return alert('กรุณากรอกชื่อและ Username');
-      if (!editingTeacherId && !newTeacherPass) return alert('กรุณากำหนดรหัสผ่านสำหรับบัญชีใหม่');
-
-      setIsProcessing(true);
-      
-      // ✅ Join grades with comma
-      const gradeLevelString = newTeacherGrades.join(',');
-
-      const teacherData: any = {
-          action: editingTeacherId ? 'edit' : 'add',
-          id: editingTeacherId || undefined,
-          name: newTeacherName,
-          username: newTeacherUser,
-          school: newTeacherSchool || teacher.school,
-          role: newTeacherRole, // Include Role
-          gradeLevel: gradeLevelString
-      };
-
-      if (newTeacherPass) {
-          teacherData.password = newTeacherPass;
-      }
-      
-      const res = await manageTeacher(teacherData);
-      
-      setIsProcessing(false);
-      if (res.success) {
-          alert(editingTeacherId ? '✅ แก้ไขข้อมูลบุคลากรเรียบร้อย' : '✅ เพิ่มบัญชีบุคลากรเรียบร้อย');
-          // Reset Form
-          setNewTeacherName(''); 
-          setNewTeacherUser(''); 
-          setNewTeacherPass(''); 
-          if(!selectedSchoolForView) setNewTeacherSchool(''); // Keep school if in view mode
-          setNewTeacherGrades(['ALL']);
-          setNewTeacherRole('TEACHER');
-          setEditingTeacherId(null);
-          loadData();
-      } else {
-          alert('เกิดข้อผิดพลาด: ' + (res.message || 'Unknown error'));
-      }
-  };
-
-  const handleEditTeacher = (t: Teacher) => {
-      setEditingTeacherId(String(t.id));
-      setNewTeacherName(t.name);
-      setNewTeacherUser(t.username || '');
-      setNewTeacherPass(''); // Don't show password for security
-      setNewTeacherSchool(t.school);
-      setNewTeacherRole(t.role || 'TEACHER');
-      
-      // ✅ Parse comma separated grades
-      if (t.gradeLevel) {
-          setNewTeacherGrades(t.gradeLevel.split(',').map(g => g.trim()));
-      } else {
-          setNewTeacherGrades(['ALL']);
-      }
-
-      document.getElementById('teacher-form')?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const handleDeleteTeacher = async (id: string) => {
-      if (!confirm('ยืนยันลบข้อมูลครูท่านนี้?')) return;
-      setIsProcessing(true);
-      await manageTeacher({ action: 'delete', id });
-      setIsProcessing(false);
-      loadData();
-  };
-
-  const handleSaveStudent = async () => {
-    if (!newStudentName) return;
-    setIsSaving(true);
-    
-    // Use selected assignGrade from state (default to first managed grade) as fallback
-    // Or userGradeLevel logic if simple
-    const studentGrade = canManageAll ? 'P6' : (myGrades[0] || 'P6');
-
-    if (editingStudentId) {
-        // Edit Mode
-        const result = await manageStudent({
-            action: 'edit',
-            id: editingStudentId,
-            name: newStudentName,
-            avatar: newStudentAvatar,
-            school: teacher.school,
-            grade: studentGrade,
-            teacherId: normalizeId(teacher.id)
-        });
-
-        if (result.success) {
-            setStudents(prev => prev.map(s => s.id === editingStudentId ? { ...s, name: newStudentName, avatar: newStudentAvatar } : s));
-            setNewStudentName('');
-            setEditingStudentId(null);
-            alert('✅ แก้ไขข้อมูลเรียบร้อย');
-        } else {
-             alert('เกิดข้อผิดพลาดในการแก้ไข');
-        }
-
-    } else {
-        // Add Mode
-        const result = await manageStudent({ 
-            action: 'add', 
-            name: newStudentName, 
-            school: teacher.school, 
-            avatar: newStudentAvatar,
-            grade: studentGrade,
-            teacherId: normalizeId(teacher.id)
-        });
-
-        if (result.success && result.student) {
-            setCreatedStudent(result.student);
-            setStudents([...students, result.student]);
-            setNewStudentName('');
-        } else {
-            alert('เกิดข้อผิดพลาดในการบันทึก');
-        }
+  // ✅ Fix: Load questions when viewing assignment questions
+  useEffect(() => {
+    if (selectedAssignment && assignmentModalTab === 'questions') {
+       const loadAssignQs = async () => {
+           setLoadingQuestions(true);
+           const qs = await getQuestionsBySubject(selectedAssignment.subject);
+           setQuestions(qs);
+           setLoadingQuestions(false);
+       };
+       loadAssignQs();
     }
-    setIsSaving(false);
-  };
+  }, [selectedAssignment, assignmentModalTab]);
 
-  const handleEditStudent = (s: Student) => {
-    setEditingStudentId(s.id);
-    setNewStudentName(s.name);
-    setNewStudentAvatar(s.avatar);
-    // Scroll to top or form
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  const onetAssignments = assignments.filter(a => a.title && a.title.startsWith('[O-NET]'));
+  const normalAssignments = assignments.filter(a => !a.title || !a.title.startsWith('[O-NET]'));
+  let filteredOnetAssignments = onetAssignments;
+  if (onetSubjectFilter !== 'ALL') filteredOnetAssignments = filteredOnetAssignments.filter(a => a.subject === onetSubjectFilter);
+  if (onetLevel) filteredOnetAssignments = filteredOnetAssignments.filter(a => a.grade === onetLevel);
 
-  const handleCancelEdit = () => {
-    setEditingStudentId(null);
-    setNewStudentName('');
-    setNewStudentAvatar('👦');
-  };
-
-  const handleDeleteStudent = async (id: string) => {
-    if (isDirector) return alert("ผู้อำนวยการไม่สามารถลบนักเรียนได้");
-    if (!confirm('ยืนยันการลบนักเรียนคนนี้? ข้อมูลคะแนนจะหายไปทั้งหมด')) return;
-    setIsProcessing(true);
-    setProcessingMessage('กำลังลบข้อมูล...');
-    
-    const result = await manageStudent({ action: 'delete', id });
-    setIsProcessing(false);
-
-    if (result.success) {
-        setStudents(prev => prev.filter(s => s.id !== id));
-    } else {
-        alert('ลบไม่สำเร็จ');
-    }
-  };
-
-  // --- AI ERROR HELPER ---
-  const handleAiError = (e: any) => {
-      console.error("AI Operation Error:", e);
-      let errorMessage = '';
-      if (typeof e === 'string') errorMessage = e;
-      else if (e?.message) errorMessage = e.message;
-      else errorMessage = JSON.stringify(e);
-
-      if (errorMessage.includes('429') || errorMessage.includes('quota')) {
-          alert("⚠️ โควต้า API เต็ม (Error 429)\nGoogle แจ้งว่า API Key นี้ใช้งานเกินขีดจำกัดแล้ว");
-      } else {
-          alert("เกิดข้อผิดพลาด: " + errorMessage);
-      }
-  };
-
-  // --- Assignment Creation Logic ---
-  const handleAssignGenerateQuestions = async () => {
-      if (!geminiApiKey) return alert("กรุณาใส่ API Key ในหน้า 'คลังข้อสอบ > AI' ก่อน");
-      if (!assignAiTopic) return alert("กรุณาระบุหัวข้อเรื่อง");
-      
-      setIsGeneratingAi(true);
-      try {
-          const generated = await generateQuestionWithAI(assignSubject, assignGrade, assignAiTopic, geminiApiKey, 5);
-          if (generated) setNewlyGeneratedQuestions(prev => [...prev, ...generated]);
-      } catch (e) { handleAiError(e); } finally { setIsGeneratingAi(false); }
-  };
-
-  // --- O-NET AI Generation Logic ---
-  const handleOnetGenerateQuestions = async () => {
-      if (!geminiApiKey) return alert("กรุณาใส่ API Key");
-      if (!assignAiTopic) return alert("กรุณาระบุสาระที่ต้องการเน้น");
-      // ✅ Use selected O-NET Level (if null, fallback P6)
-      const gradeToGen = onetLevel || 'P6';
-      
-      setIsGeneratingAi(true);
-      try {
-          const generated = await generateQuestionWithAI(assignSubject, gradeToGen, assignAiTopic, geminiApiKey, 5, 'onet');
-          if (generated) setNewlyGeneratedQuestions(prev => [...prev, ...generated]);
-      } catch (e) { handleAiError(e); } finally { setIsGeneratingAi(false); }
-  };
-
-  const handleFinalizeAssignment = async () => {
-    if (newlyGeneratedQuestions.length > 0) {
-        setIsProcessing(true);
-        setProcessingMessage(`กำลังบันทึกข้อสอบ ${newlyGeneratedQuestions.length} ข้อ...`);
-        const tid = normalizeId(teacher.id);
-        for (const q of newlyGeneratedQuestions) {
-            await addQuestion({
-                subject: assignSubject, grade: assignGrade, text: q.text, image: q.image || '', c1: q.c1, c2: q.c2, c3: q.c3, c4: q.c4, correct: q.correct, explanation: q.explanation, school: teacher.school, teacherId: tid
-            });
-        }
-    }
-    setProcessingMessage('กำลังสร้างการบ้าน...');
-    
-    // ✅ Logic: Handle Title with O-NET Prefix
-    let finalTitle = assignTitle;
-    if (activeTab === 'onet') {
-        if (!finalTitle) {
-            finalTitle = `[O-NET] ฝึกฝน${assignSubject} เรื่อง ${assignAiTopic || 'ทั่วไป'}`;
-        } else if (!finalTitle.startsWith('[O-NET]')) {
-            finalTitle = `[O-NET] ${finalTitle}`;
-        }
-    } else {
-        if (!finalTitle) {
-            finalTitle = `การบ้าน ${assignSubject}`;
-        }
-    }
-
-    const success = await addAssignment(teacher.school, assignSubject, assignGrade, assignCount, assignDeadline, teacher.name, finalTitle);
-    setIsProcessing(false);
-    if (success) { 
-        alert('✅ สั่งการบ้านเรียบร้อยแล้ว'); 
-        setAssignStep(1); setAssignDeadline(''); setAssignTitle(''); setNewlyGeneratedQuestions([]); setAssignAiTopic('');
-        if (activeTab === 'onet') await loadData(); else { setActiveTab('assignments'); await loadData(); }
-    } else { alert('เกิดข้อผิดพลาดในการสร้างการบ้าน'); }
-  };
-
-  const handleDeleteAssignment = async (id: string) => {
-    if (!confirm('ยืนยันลบการบ้านนี้?')) return;
-    setIsProcessing(true);
-    const success = await deleteAssignment(id);
-    setIsProcessing(false);
-    if (success) { setAssignments(prev => prev.filter(a => a.id !== id)); loadData(); }
-  };
-
-  const handleViewAssignment = (a: Assignment) => {
-      setSelectedAssignment(a);
-      setAssignmentModalTab('status'); 
-  };
-
-  const handleSaveQuestion = async () => {
-    if (!qText || !qChoices.c1 || !qChoices.c2 || !qSubject) return alert('กรุณากรอกข้อมูลให้ครบถ้วน');
-    const tid = normalizeId(teacher.id);
-    setIsProcessing(true);
-    setProcessingMessage(editingQuestionId ? 'กำลังบันทึกการแก้ไข...' : 'กำลังบันทึกข้อสอบ...');
-    const questionPayload = { id: editingQuestionId, subject: qSubject, grade: qGrade, text: qText, image: qImage, c1: qChoices.c1, c2: qChoices.c2, c3: qChoices.c3, c4: qChoices.c4, correct: qCorrect, explanation: qExplain, school: teacher.school, teacherId: tid };
-    let success = editingQuestionId ? await editQuestion(questionPayload) : await addQuestion(questionPayload);
-    setIsProcessing(false);
-    if (success) { 
-        alert('✅ บันทึกสำเร็จ'); setQText(''); setQChoices({c1:'', c2:'', c3:'', c4:''}); setEditingQuestionId(null); await loadData(); 
-    } else { alert('บันทึกไม่สำเร็จ'); }
-  };
-  
-  const handleEditQuestion = (q: Question) => {
-    setEditingQuestionId(q.id); setQSubject(q.subject); setQGrade(q.grade || 'P6'); setQText(q.text); setQImage(q.image || ''); setQCorrect(String(q.correctChoiceId)); setQExplain(q.explanation); setQChoices({ c1: q.choices[0]?.text || '', c2: q.choices[1]?.text || '', c3: q.choices[2]?.text || '', c4: q.choices[3]?.text || '' });
-    document.getElementById('question-form')?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const handleDeleteQuestion = async (id: string) => {
-      if(!confirm('ลบข้อสอบนี้?')) return;
-      setIsProcessing(true); await deleteQuestion(id); setIsProcessing(false); loadData();
-  };
-
-  // AI GENERATOR LOGIC
-  const handleAiGenerate = async () => {
-      if (!aiTopic || !geminiApiKey) return alert("กรุณาระบุหัวข้อและ API Key");
-      setIsGeneratingAi(true);
-      try {
-          const generated = await generateQuestionWithAI(aiSourceMode === 'assignment' ? assignSubject : qSubject, aiSourceMode === 'assignment' ? assignGrade : qGrade, aiTopic, geminiApiKey, aiCount);
-          if (generated) setAiPreviewQuestions(prev => [...prev, ...generated]);
-      } catch (e) { handleAiError(e); } finally { setIsGeneratingAi(false); }
-  };
-
-  const handleSaveAiQuestions = async () => {
-      if (aiPreviewQuestions.length === 0) return;
-      setIsProcessing(true);
-      setProcessingMessage(`กำลังบันทึก ${aiPreviewQuestions.length} ข้อลงคลัง...`);
-      const targetSubject = aiSourceMode === 'assignment' ? assignSubject : qSubject;
-      const targetGrade = aiSourceMode === 'assignment' ? assignGrade : qGrade;
-      const tid = normalizeId(teacher.id);
-      let successCount = 0;
-      for (const q of aiPreviewQuestions) {
-          const success = await addQuestion({ subject: targetSubject, grade: targetGrade, text: q.text, image: q.image || '', c1: q.c1, c2: q.c2, c3: q.c3, c4: q.c4, correct: q.correct, explanation: q.explanation, school: teacher.school, teacherId: tid });
-          if (success) successCount++;
-      }
-      setIsProcessing(false);
-      alert(`✅ บันทึกสำเร็จ ${successCount} ข้อ`);
-      setAiPreviewQuestions([]); setShowAiModal(false); loadData();
-  };
-
-  // Helpers
-  const formatDate = (dateString: string) => {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return dateString;
-    return date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
-  };
-
+  // Question Filter Logic (Client-side filtering of fetched subject questions)
   const getFilteredQuestions = () => { 
       const currentTid = normalizeId(teacher.id);
       let result = questions;
-
-      // 1. Filter by Owner (if enabled)
       if (showMyQuestionsOnly) {
           if (!currentTid) result = [];
           else result = result.filter(q => normalizeId(q.teacherId) === currentTid);
       }
-
-      // 2. Filter by Subject (if selected)
-      if (qBankSubject) {
-          result = result.filter(q => q.subject === qBankSubject);
-      }
-
       return result;
   };
   
   const filteredQuestions = getFilteredQuestions();
   const currentQuestions = filteredQuestions.slice((qBankPage - 1) * ITEMS_PER_PAGE, qBankPage * ITEMS_PER_PAGE);
-  const displayedSubjects = availableSubjects; 
-
-  const countSubmitted = (assignmentId: string) => {
-      const submittedStudentIds = new Set(stats.filter(r => r.assignmentId === assignmentId).map(r => r.studentId));
-      return submittedStudentIds.size;
-  };
-
-  const getAssignmentQuestions = (assignment: Assignment) => {
-      let qList = questions.filter(q => (q.subject === assignment.subject) && (q.school === assignment.school || q.school === 'CENTER' || q.school === 'Admin'));
-      if (assignment.grade && assignment.grade !== 'ALL') qList = qList.filter(q => q.grade === assignment.grade || q.grade === 'ALL');
-      return [...qList].reverse().slice(0, assignment.questionCount);
-  };
-
-  const onetAssignments = assignments.filter(a => a.title && a.title.startsWith('[O-NET]'));
-  const normalAssignments = assignments.filter(a => !a.title || !a.title.startsWith('[O-NET]'));
-  
-  // ✅ Filter O-NET assignments by Selected Level (if active)
-  let filteredOnetAssignments = onetAssignments;
-  
-  // Filter by Subject
-  if (onetSubjectFilter !== 'ALL') {
-      filteredOnetAssignments = filteredOnetAssignments.filter(a => a.subject === onetSubjectFilter);
-  }
-  
-  // Filter by Grade Level (if selected)
-  if (onetLevel) {
-      filteredOnetAssignments = filteredOnetAssignments.filter(a => a.grade === onetLevel);
-  }
 
   return (
     <div className="max-w-6xl mx-auto pb-20 relative">
@@ -989,7 +594,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 title="ข้อมูลส่วนตัว" 
                 desc="แก้ไขชื่อ / รหัสผ่าน" 
                 color="bg-teal-50 text-teal-600 border-teal-200" 
-                onClick={() => { setActiveTab('profile'); setProfileName(teacher.name); setProfilePassword(''); setProfileConfirmPass(''); }} 
+                onClick={() => { setActiveTab('profile'); setProfileName(teacher.name || ''); setProfilePassword(''); setProfileConfirmPass(''); }} 
             />
 
             {/* ✅ P-Chat (O-NET) Button: Visible only if permission allows */}
@@ -1040,6 +645,332 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
         <div className="bg-white rounded-3xl shadow-sm p-4 md:p-6 min-h-[400px] relative animate-fade-in">
             <button onClick={() => { setActiveTab('menu'); setEditingStudentId(null); setCreatedStudent(null); setSelectedStudentForStats(null); }} className="mb-6 flex items-center gap-2 text-gray-500 hover:text-purple-600 font-bold transition-colors"><div className="bg-gray-100 p-2 rounded-full"><ArrowLeft size={20} /></div> กลับเมนูหลัก</button>
             
+            {/* O-NET TAB */}
+            {activeTab === 'onet' && (
+              <div className="max-w-4xl mx-auto">
+                 <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-200 mb-8 shadow-sm">
+                    {!onetLevel ? (
+                        <div>
+                            <h4 className="font-bold text-indigo-900 mb-6 flex items-center gap-2 text-xl"><Trophy className="text-yellow-500"/> เลือกระดับชั้นติว O-NET</h4>
+                            <div className="grid md:grid-cols-2 gap-6">
+                                <button onClick={() => { setOnetLevel('P6'); setAssignGrade('P6'); setNewlyGeneratedQuestions([]); }} className="bg-white p-8 rounded-3xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition border-2 border-indigo-100 group text-center">
+                                    <div className="bg-indigo-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                        <GraduationCap size={40} />
+                                    </div>
+                                    <h3 className="text-2xl font-bold text-gray-800 group-hover:text-indigo-700">พิชิต O-NET ป.6</h3>
+                                    <p className="text-gray-500 mt-2">ประถมศึกษาปีที่ 6</p>
+                                </button>
+                                <button onClick={() => { setOnetLevel('M3'); setAssignGrade('M3'); setNewlyGeneratedQuestions([]); }} className="bg-white p-8 rounded-3xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition border-2 border-indigo-100 group text-center">
+                                    <div className="bg-purple-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                                        <GraduationCap size={40} />
+                                    </div>
+                                    <h3 className="text-2xl font-bold text-gray-800 group-hover:text-purple-700">พิชิต O-NET ม.3</h3>
+                                    <p className="text-gray-500 mt-2">มัธยมศึกษาปีที่ 3</p>
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="animate-fade-in">
+                            {(!teacher.gradeLevel || teacher.gradeLevel === 'ALL') && (
+                                <button onClick={() => setOnetLevel(null)} className="mb-4 flex items-center gap-1 text-indigo-600 font-bold hover:underline text-sm"><ArrowLeft size={16}/> กลับไปเลือกชั้น</button>
+                            )}
+                            <h4 className="font-bold text-indigo-900 mb-4 flex items-center gap-2 text-xl"><Trophy className="text-yellow-500"/> ติวเข้มพิชิต O-NET ({GRADE_LABELS[onetLevel]})</h4>
+                            
+                            <div className="space-y-4">
+                                <div className="bg-white p-5 rounded-xl border border-indigo-100 shadow-sm">
+                                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">วิชา (4 วิชาหลัก)</label>
+                                        <select value={assignSubject} onChange={(e) => setAssignSubject(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 outline-none">
+                                            <option value="">-- เลือกวิชา --</option>
+                                            {ONET_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">จำนวนข้อ</label>
+                                        <input type="number" value={assignCount} onChange={(e) => setAssignCount(Number(e.target.value))} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white" min="5" max="20" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">กำหนดส่ง</label>
+                                        <input type="date" value={assignDeadline} onChange={(e) => setAssignDeadline(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">สาระที่ต้องการเน้น (Topic)</label>
+                                        <input type="text" value={assignAiTopic} onChange={(e) => setAssignAiTopic(e.target.value)} placeholder="เช่น พีชคณิต, การอ่านจับใจความ" className="w-full p-2.5 rounded-lg border border-gray-300 bg-white outline-none" />
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">Google Gemini API Key</label>
+                                        <div className="flex gap-2">
+                                            <input type="password" value={geminiApiKey} onChange={(e) => { setGeminiApiKey(e.target.value); localStorage.setItem('gemini_api_key', e.target.value); }} className="flex-1 p-2 border rounded-lg text-sm bg-gray-50" placeholder="วาง API Key ที่นี่..." />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-end">
+                                    <button 
+                                        onClick={handleOnetGenerateQuestions}
+                                        disabled={isGeneratingAi || !assignSubject || !assignAiTopic}
+                                        className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:scale-105 transition disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                        {isGeneratingAi ? <RefreshCw className="animate-spin"/> : <Sparkles size={18}/>}
+                                        สร้างข้อสอบ O-NET ด้วย AI
+                                    </button>
+                                </div>
+                                
+                                {newlyGeneratedQuestions.length > 0 && (
+                                <div className="border rounded-xl overflow-hidden bg-white mt-6 shadow-md border-indigo-200">
+                                    <div className="bg-indigo-50 p-3 flex justify-between items-center border-b border-indigo-100">
+                                        <span className="font-bold text-indigo-900 text-sm">ตัวอย่างข้อสอบ ({newlyGeneratedQuestions.length} ข้อ)</span>
+                                        <button onClick={() => setNewlyGeneratedQuestions([])} className="text-xs text-red-500 hover:underline">ล้างทั้งหมด</button>
+                                    </div>
+                                    <div className="max-h-60 overflow-y-auto p-2 space-y-2">
+                                        {newlyGeneratedQuestions.map((q, i) => (
+                                            <div key={i} className="p-3 border rounded-lg bg-gray-50 text-sm relative group">
+                                                <div className="font-bold text-gray-800 pr-6">{i+1}. {q.text}</div>
+                                                <div className="text-gray-500 text-xs mt-1">ตอบ: {q.correct} | {q.explanation}</div>
+                                                <button onClick={() => setNewlyGeneratedQuestions(prev => prev.filter((_, idx) => idx !== i))} className="absolute top-2 right-2 text-red-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"><Trash2 size={16}/></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="p-4 border-t bg-gray-50">
+                                        <div className="mb-2">
+                                            <label className="text-xs font-bold text-gray-500">ชื่อการบ้าน (ตั้งชื่ออัตโนมัติ)</label>
+                                            <input 
+                                            type="text" 
+                                            value={assignTitle || `[O-NET] ฝึกฝน${assignSubject} เรื่อง ${assignAiTopic}`} 
+                                            onChange={e => setAssignTitle(e.target.value)} 
+                                            className="w-full p-2 border rounded-lg bg-white"
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={handleFinalizeAssignment}
+                                            disabled={isProcessing}
+                                            className="w-full bg-green-500 text-white py-3 rounded-xl font-bold shadow hover:bg-green-600 disabled:opacity-50 flex justify-center items-center gap-2"
+                                        >
+                                            {isProcessing ? 'กำลังบันทึก...' : <><Save size={20}/> บันทึกเป็นการบ้าน</>}
+                                        </button>
+                                    </div>
+                                </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                 </div>
+
+                 {onetLevel && (
+                 <div className="mt-8">
+                     <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                            <List size={20}/> รายการติว O-NET ({filteredOnetAssignments.length})
+                        </h3>
+                     </div>
+                     {filteredOnetAssignments.length === 0 ? (
+                         <div className="text-center py-10 text-gray-400 border-2 border-dashed rounded-xl bg-gray-50">
+                             ยังไม่มีรายการติว O-NET
+                         </div>
+                     ) : (
+                         <div className="space-y-3">
+                             {filteredOnetAssignments.slice().reverse().map(a => (
+                                 <div key={a.id} className="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center hover:shadow-md transition">
+                                     <div className="mb-2 md:mb-0">
+                                         <div className="font-bold text-indigo-900 text-lg">{a.title}</div>
+                                         <div className="text-sm text-gray-500 flex gap-4">
+                                             <span className="bg-indigo-50 text-indigo-600 px-2 rounded text-xs font-bold flex items-center">{a.subject}</span>
+                                             <span>{a.questionCount} ข้อ</span>
+                                             <span>กำหนดส่ง: {formatDate(a.deadline)}</span>
+                                         </div>
+                                     </div>
+                                     <div className="flex items-center gap-2">
+                                          <button onClick={() => handleViewAssignment(a)} className="bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-indigo-100">ดูรายละเอียด</button>
+                                          {!isDirector && <button onClick={() => handleDeleteAssignment(a.id)} className="bg-red-50 text-red-500 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-red-100"><Trash2 size={16}/></button>}
+                                     </div>
+                                 </div>
+                             ))}
+                         </div>
+                     )}
+                 </div>
+                 )}
+              </div>
+            )}
+
+            {/* ASSIGNMENTS TAB */}
+            {activeTab === 'assignments' && (
+              <div className="max-w-4xl mx-auto">
+                 <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 mb-8 shadow-sm">
+                    <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Calendar className="text-orange-500"/> สั่งงานใหม่</h4>
+                    
+                    {availableSubjects.length === 0 ? (
+                        <div className="text-red-500 text-center p-4 bg-red-50 rounded-xl border border-red-200 mb-4">
+                            กรุณาไปที่เมนู "จัดการรายวิชา" เพื่อเพิ่มวิชาก่อนสั่งงาน
+                        </div>
+                    ) : (
+                    <div>
+                        {/* Step 1: Assignment Details */}
+                        {assignStep === 1 && (
+                            <div className="space-y-4 animate-fade-in">
+                                <div className="grid md:grid-cols-2 gap-4">
+                                    <div className="md:col-span-2">
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">ชื่อหัวข้อการบ้าน</label>
+                                        <input type="text" value={assignTitle} onChange={e => setAssignTitle(e.target.value)} placeholder={`เช่น การบ้าน ${assignSubject || '...'} ประจำสัปดาห์`} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-orange-200 outline-none"/>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">วิชา</label>
+                                        <select value={assignSubject} onChange={(e) => setAssignSubject(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 outline-none">
+                                            <option value="">-- เลือกวิชา --</option>
+                                            {availableSubjects.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">ระดับชั้น</label>
+                                        <select value={assignGrade} onChange={(e) => setAssignGrade(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white outline-none">
+                                            {canManageAll ? <option value="ALL">ทุกชั้น</option> : null}
+                                            {myGrades.map(g => (
+                                                <option key={g} value={g}>{GRADE_LABELS[g] || g}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">จำนวนข้อ</label>
+                                        <input type="number" value={assignCount} onChange={(e) => setAssignCount(Number(e.target.value))} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white" min="5" max="50" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 block mb-1">ส่งภายใน</label>
+                                        <input type="date" value={assignDeadline} onChange={(e) => setAssignDeadline(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white" />
+                                    </div>
+                                </div>
+                                <div className="pt-4 flex justify-end">
+                                    <button 
+                                        onClick={() => {
+                                            if (!assignSubject || !assignDeadline) return alert("กรุณากรอกข้อมูลให้ครบถ้วน");
+                                            setAssignStep(2);
+                                        }}
+                                        className="bg-orange-500 text-white px-6 py-2 rounded-xl font-bold hover:bg-orange-600 shadow-sm flex items-center gap-2"
+                                    >
+                                        ถัดไป: สร้างข้อสอบด้วย AI <ArrowRight size={18}/>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 2: AI Generation */}
+                        {assignStep === 2 && (
+                            <div className="animate-fade-in space-y-4">
+                                <div className="bg-orange-100 p-4 rounded-xl border border-orange-200 text-orange-900 text-sm mb-4 flex justify-between items-center">
+                                    <span>สร้างข้อสอบสำหรับ: <b>{assignSubject}</b> ({assignCount} ข้อ)</span>
+                                    <button onClick={() => setAssignStep(1)} className="text-orange-700 underline text-xs">แก้ไขข้อมูล</button>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Google Gemini API Key</label>
+                                    <div className="flex gap-2">
+                                        <input type="password" value={geminiApiKey} onChange={(e) => { setGeminiApiKey(e.target.value); localStorage.setItem('gemini_api_key', e.target.value); }} className="flex-1 p-2 border rounded-lg text-sm bg-white" placeholder="วาง API Key ที่นี่..." />
+                                    </div>
+                                </div>
+
+                                <div className="p-4 bg-white border rounded-xl shadow-sm">
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">หัวข้อเรื่องที่ต้องการ (Topic)</label>
+                                    <div className="flex gap-2 mb-2">
+                                        <input 
+                                            type="text" 
+                                            value={assignAiTopic} 
+                                            onChange={(e) => setAssignAiTopic(e.target.value)} 
+                                            placeholder="ระบุเรื่องที่ต้องการให้ AI สร้างโจทย์ เช่น การบวกเลข, คำราชาศัพท์"
+                                            className="flex-1 p-3 border rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-purple-200 outline-none"
+                                        />
+                                        <button 
+                                            onClick={handleAssignGenerateQuestions}
+                                            disabled={isGeneratingAi || !assignAiTopic}
+                                            className="bg-purple-600 text-white px-4 rounded-xl font-bold shadow-sm hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {isGeneratingAi ? <RefreshCw className="animate-spin" size={18}/> : <BrainCircuit size={18}/>}
+                                            สร้าง +5 ข้อ
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Generated List */}
+                                <div className="border rounded-xl overflow-hidden bg-white">
+                                    <div className="bg-gray-100 p-3 flex justify-between items-center">
+                                        <span className="font-bold text-gray-700 text-sm">รายการข้อสอบ ({newlyGeneratedQuestions.length}/{assignCount})</span>
+                                        {newlyGeneratedQuestions.length > 0 && <button onClick={() => setNewlyGeneratedQuestions([])} className="text-xs text-red-500 hover:underline">ล้างทั้งหมด</button>}
+                                    </div>
+                                    <div className="max-h-60 overflow-y-auto p-2 space-y-2">
+                                        {newlyGeneratedQuestions.map((q, i) => (
+                                            <div key={i} className="p-3 border rounded-lg bg-gray-50 text-sm relative group">
+                                                <div className="font-bold text-gray-800 pr-6">{i+1}. {q.text}</div>
+                                                <div className="text-gray-500 text-xs mt-1">ตอบ: {q.correct}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div className="flex gap-3 pt-4 border-t">
+                                    <button onClick={() => setAssignStep(1)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg">ย้อนกลับ</button>
+                                    <button 
+                                        onClick={handleFinalizeAssignment}
+                                        disabled={isProcessing || newlyGeneratedQuestions.length === 0}
+                                        className="flex-1 bg-green-500 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-green-600 disabled:opacity-50 flex justify-center items-center gap-2"
+                                    >
+                                        {isProcessing ? 'กำลังบันทึก...' : <><Save size={20}/> บันทึกการบ้าน</>}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    )}
+                 </div>
+
+                 <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-gray-800">รายการการบ้าน ({normalAssignments.length})</h3>
+                    <button onClick={loadData} className="text-sm bg-gray-100 px-3 py-1 rounded-lg hover:bg-gray-200 transition"><RefreshCw size={14}/> รีเฟรช</button>
+                 </div>
+                 
+                 {normalAssignments.length === 0 ? (
+                     <div className="text-center py-10 text-gray-400 border-2 border-dashed rounded-xl">ยังไม่มีการบ้าน</div>
+                 ) : (
+                     <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-gray-200">
+                         <table className="w-full text-sm text-left">
+                             <thead className="bg-orange-50 text-orange-900">
+                                 <tr><th className="p-3">หัวข้อการบ้าน</th><th className="p-3 text-center">วิชา (ชั้น)</th><th className="p-3 text-center">จำนวนข้อ</th><th className="p-3">ส่งภายใน</th><th className="p-3 text-center">ส่งแล้ว</th><th className="p-3 text-right">จัดการ</th></tr>
+                             </thead>
+                             <tbody>
+                                 {normalAssignments.slice().reverse().map((a) => {
+                                     const submittedCount = countSubmitted(a.id);
+                                     const isExpired = new Date(a.deadline) < new Date();
+                                     return (
+                                         <tr key={a.id} className="border-b hover:bg-gray-50 last:border-0 transition-colors">
+                                             <td className="p-3 font-bold text-gray-900">
+                                                 {a.title || a.subject} 
+                                             </td>
+                                             <td className="p-3 text-center text-gray-600">
+                                                 {a.subject}
+                                                 {a.grade && a.grade !== 'ALL' && <div className="text-[10px] text-gray-400">{GRADE_LABELS[a.grade] || a.grade}</div>}
+                                             </td>
+                                             <td className="p-3 text-center font-mono">{a.questionCount}</td>
+                                             <td className={`p-3 font-medium ${isExpired ? 'text-red-600' : 'text-gray-900'}`}>
+                                                 {formatDate(a.deadline)}
+                                             </td>
+                                             <td className="p-3 text-center">
+                                                 <span className={`px-2 py-1 rounded-full font-bold text-xs ${submittedCount > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
+                                                     {submittedCount}
+                                                 </span>
+                                             </td>
+                                             <td className="p-3 text-right flex justify-end gap-2">
+                                                 <button onClick={() => handleViewAssignment(a)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded"><Eye size={16} /></button>
+                                                 <button onClick={() => handleDeleteAssignment(a.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16}/></button>
+                                             </td>
+                                         </tr>
+                                     );
+                                 })}
+                             </tbody>
+                         </table>
+                     </div>
+                 )}
+              </div>
+            )}
+
             {/* ADMIN STATS TAB (Used for both System Admin and Director) */}
             {activeTab === 'admin_stats' && (isAdmin || isDirector) && (
                 <div className="max-w-6xl mx-auto">
@@ -1175,381 +1106,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                 </div>
             )}
 
-            {/* O-NET TAB */}
-            {activeTab === 'onet' && (
-              <div className="max-w-4xl mx-auto">
-                 <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-200 mb-8 shadow-sm">
-                    {/* ... (Existing O-NET Code) ... */}
-                    {!onetLevel ? (
-                        <div>
-                            <h4 className="font-bold text-indigo-900 mb-6 flex items-center gap-2 text-xl"><Trophy className="text-yellow-500"/> เลือกระดับชั้นติว O-NET</h4>
-                            <div className="grid md:grid-cols-2 gap-6">
-                                <button onClick={() => { setOnetLevel('P6'); setAssignGrade('P6'); setNewlyGeneratedQuestions([]); }} className="bg-white p-8 rounded-3xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition border-2 border-indigo-100 group text-center">
-                                    <div className="bg-indigo-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                                        <GraduationCap size={40} />
-                                    </div>
-                                    <h3 className="text-2xl font-bold text-gray-800 group-hover:text-indigo-700">พิชิต O-NET ป.6</h3>
-                                    <p className="text-gray-500 mt-2">ประถมศึกษาปีที่ 6</p>
-                                </button>
-                                <button onClick={() => { setOnetLevel('M3'); setAssignGrade('M3'); setNewlyGeneratedQuestions([]); }} className="bg-white p-8 rounded-3xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition border-2 border-indigo-100 group text-center">
-                                    <div className="bg-purple-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                                        <GraduationCap size={40} />
-                                    </div>
-                                    <h3 className="text-2xl font-bold text-gray-800 group-hover:text-purple-700">พิชิต O-NET ม.3</h3>
-                                    <p className="text-gray-500 mt-2">มัธยมศึกษาปีที่ 3</p>
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="animate-fade-in">
-                            {/* Show Back button only if user has choice (is Admin or ALL) */}
-                            {(!teacher.gradeLevel || teacher.gradeLevel === 'ALL') && (
-                                <button onClick={() => setOnetLevel(null)} className="mb-4 flex items-center gap-1 text-indigo-600 font-bold hover:underline text-sm"><ArrowLeft size={16}/> กลับไปเลือกชั้น</button>
-                            )}
-                            <h4 className="font-bold text-indigo-900 mb-4 flex items-center gap-2 text-xl"><Trophy className="text-yellow-500"/> ติวเข้มพิชิต O-NET ({GRADE_LABELS[onetLevel]})</h4>
-                            
-                            <div className="space-y-4">
-                                <div className="bg-white p-5 rounded-xl border border-indigo-100 shadow-sm">
-                                <div className="grid md:grid-cols-2 gap-4 mb-4">
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 block mb-1">วิชา (4 วิชาหลัก)</label>
-                                        <select value={assignSubject} onChange={(e) => setAssignSubject(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 outline-none">
-                                            <option value="">-- เลือกวิชา --</option>
-                                            {ONET_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 block mb-1">จำนวนข้อ</label>
-                                        <input type="number" value={assignCount} onChange={(e) => setAssignCount(Number(e.target.value))} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white" min="5" max="20" />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 block mb-1">กำหนดส่ง</label>
-                                        <input type="date" value={assignDeadline} onChange={(e) => setAssignDeadline(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white" />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 block mb-1">สาระที่ต้องการเน้น (Topic)</label>
-                                        <input type="text" value={assignAiTopic} onChange={(e) => setAssignAiTopic(e.target.value)} placeholder="เช่น พีชคณิต, การอ่านจับใจความ" className="w-full p-2.5 rounded-lg border border-gray-300 bg-white outline-none" />
-                                    </div>
-                                </div>
-                                
-                                <div>
-                                        <label className="block text-xs font-bold text-gray-500 mb-1">Google Gemini API Key</label>
-                                        <div className="flex gap-2">
-                                            <input type="password" value={geminiApiKey} onChange={(e) => { setGeminiApiKey(e.target.value); localStorage.setItem('gemini_api_key', e.target.value); }} className="flex-1 p-2 border rounded-lg text-sm bg-gray-50" placeholder="วาง API Key ที่นี่..." />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="flex justify-end">
-                                    <button 
-                                        onClick={handleOnetGenerateQuestions}
-                                        disabled={isGeneratingAi || !assignSubject || !assignAiTopic}
-                                        className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:scale-105 transition disabled:opacity-50 flex items-center gap-2"
-                                    >
-                                        {isGeneratingAi ? <RefreshCw className="animate-spin"/> : <Sparkles size={18}/>}
-                                        สร้างข้อสอบ O-NET ด้วย AI
-                                    </button>
-                                </div>
-                                
-                                <div className="text-xs text-center text-indigo-400">
-                                    *ระบบจะวิเคราะห์แนวข้อสอบเก่า O-NET ปี 2560-2567 เพื่อสร้างข้อสอบใหม่ที่ใกล้เคียงที่สุด
-                                </div>
-
-                                {newlyGeneratedQuestions.length > 0 && (
-                                <div className="border rounded-xl overflow-hidden bg-white mt-6 shadow-md border-indigo-200">
-                                    <div className="bg-indigo-50 p-3 flex justify-between items-center border-b border-indigo-100">
-                                        <span className="font-bold text-indigo-900 text-sm">ตัวอย่างข้อสอบ ({newlyGeneratedQuestions.length} ข้อ)</span>
-                                        <button onClick={() => setNewlyGeneratedQuestions([])} className="text-xs text-red-500 hover:underline">ล้างทั้งหมด</button>
-                                    </div>
-                                    <div className="max-h-60 overflow-y-auto p-2 space-y-2">
-                                        {newlyGeneratedQuestions.map((q, i) => (
-                                            <div key={i} className="p-3 border rounded-lg bg-gray-50 text-sm relative group">
-                                                <div className="font-bold text-gray-800 pr-6">{i+1}. {q.text}</div>
-                                                <div className="text-gray-500 text-xs mt-1">ตอบ: {q.correct} | {q.explanation}</div>
-                                                <button onClick={() => setNewlyGeneratedQuestions(prev => prev.filter((_, idx) => idx !== i))} className="absolute top-2 right-2 text-red-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"><Trash2 size={16}/></button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="p-4 border-t bg-gray-50">
-                                        <div className="flex gap-2 mb-4">
-                                            <button 
-                                                onClick={handleOnetGenerateQuestions}
-                                                disabled={isGeneratingAi}
-                                                className="flex-1 py-2 bg-indigo-100 text-indigo-600 rounded-lg font-bold text-sm hover:bg-indigo-200 flex items-center justify-center gap-2"
-                                            >
-                                                {isGeneratingAi ? <RefreshCw size={14} className="animate-spin"/> : <PlusCircle size={14}/>} เพิ่มข้อสอบอีก
-                                            </button>
-                                        </div>
-
-                                        <div className="mb-2">
-                                            <label className="text-xs font-bold text-gray-500">ชื่อการบ้าน (ตั้งชื่ออัตโนมัติ)</label>
-                                            <input 
-                                            type="text" 
-                                            value={assignTitle || `[O-NET] ฝึกฝน${assignSubject} เรื่อง ${assignAiTopic}`} 
-                                            onChange={e => setAssignTitle(e.target.value)} 
-                                            className="w-full p-2 border rounded-lg bg-white"
-                                            />
-                                        </div>
-                                        <button 
-                                            onClick={handleFinalizeAssignment}
-                                            disabled={isProcessing}
-                                            className="w-full bg-green-500 text-white py-3 rounded-xl font-bold shadow hover:bg-green-600 disabled:opacity-50 flex justify-center items-center gap-2"
-                                        >
-                                            {isProcessing ? 'กำลังบันทึก...' : <><Save size={20}/> บันทึกเป็นการบ้าน</>}
-                                        </button>
-                                    </div>
-                                </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                 </div>
-
-                 {/* Only show list if Level is selected or if filteredOnetAssignments logic is adjusted */}
-                 {onetLevel && (
-                 <div className="mt-8">
-                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                            <List size={20}/> รายการติว O-NET ({filteredOnetAssignments.length})
-                        </h3>
-                        <div className="flex bg-gray-100 p-1 rounded-lg">
-                            <button onClick={() => setOnetSubjectFilter('ALL')} className={`px-3 py-1 rounded-md text-xs font-bold transition ${onetSubjectFilter === 'ALL' ? 'bg-white shadow text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>ทั้งหมด</button>
-                            {ONET_SUBJECTS.map(subj => (
-                                <button key={subj} onClick={() => setOnetSubjectFilter(subj)} className={`px-3 py-1 rounded-md text-xs font-bold transition ${onetSubjectFilter === subj ? 'bg-white shadow text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>{subj}</button>
-                            ))}
-                        </div>
-                     </div>
-
-                     {filteredOnetAssignments.length === 0 ? (
-                         <div className="text-center py-10 text-gray-400 border-2 border-dashed rounded-xl bg-gray-50">
-                             {onetSubjectFilter === 'ALL' ? `ยังไม่ได้สร้างรายการติว O-NET ชั้น ${GRADE_LABELS[onetLevel]}` : `ไม่พบรายการติววิชา${onetSubjectFilter}`}
-                         </div>
-                     ) : (
-                         <div className="space-y-3">
-                             {filteredOnetAssignments.slice().reverse().map(a => (
-                                 <div key={a.id} className="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center hover:shadow-md transition">
-                                     <div className="mb-2 md:mb-0">
-                                         <div className="font-bold text-indigo-900 text-lg">{a.title}</div>
-                                         <div className="text-sm text-gray-500 flex gap-4">
-                                             <span className="bg-indigo-50 text-indigo-600 px-2 rounded text-xs font-bold flex items-center">{a.subject}</span>
-                                             <span>{a.questionCount} ข้อ</span>
-                                             <span>กำหนดส่ง: {formatDate(a.deadline)}</span>
-                                         </div>
-                                     </div>
-                                     <div className="flex items-center gap-2">
-                                          <button onClick={() => handleViewAssignment(a)} className="bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-indigo-100">ดูรายละเอียด</button>
-                                          {!isDirector && <button onClick={() => handleDeleteAssignment(a.id)} className="bg-red-50 text-red-500 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-red-100"><Trash2 size={16}/></button>}
-                                     </div>
-                                 </div>
-                             ))}
-                         </div>
-                     )}
-                 </div>
-                 )}
-              </div>
-            )}
-
-            {/* ASSIGNMENTS TAB */}
-            {activeTab === 'assignments' && (
-              <div className="max-w-4xl mx-auto">
-                 {/* ✅ REMOVED EMPTY BLOCKER HERE - Now shows content even if subjects are empty */}
-                 <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 mb-8 shadow-sm">
-                    <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Calendar className="text-orange-500"/> สั่งงานใหม่</h4>
-                    
-                    {availableSubjects.length === 0 ? (
-                        <div className="text-red-500 text-center p-4 bg-red-50 rounded-xl border border-red-200 mb-4">
-                            กรุณาไปที่เมนู "จัดการรายวิชา" เพื่อเพิ่มวิชาก่อนสั่งงาน
-                        </div>
-                    ) : (
-                    <div>
-                        {/* Step 1: Assignment Details */}
-                        {assignStep === 1 && (
-                            <div className="space-y-4 animate-fade-in">
-                                <div className="grid md:grid-cols-2 gap-4">
-                                    <div className="md:col-span-2">
-                                        <label className="text-xs font-bold text-gray-500 block mb-1">ชื่อหัวข้อการบ้าน</label>
-                                        <input type="text" value={assignTitle} onChange={e => setAssignTitle(e.target.value)} placeholder={`เช่น การบ้าน ${assignSubject || '...'} ประจำสัปดาห์`} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white focus:ring-2 focus:ring-orange-200 outline-none"/>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 block mb-1">วิชา</label>
-                                        <select value={assignSubject} onChange={(e) => setAssignSubject(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white text-gray-900 outline-none">
-                                            <option value="">-- เลือกวิชา --</option>
-                                            {availableSubjects.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 block mb-1">ระดับชั้น</label>
-                                        {canManageAll ? (
-                                            <select value={assignGrade} onChange={(e) => setAssignGrade(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white outline-none">
-                                                <option value="ALL">ทุกชั้น</option>
-                                                {GRADES.map(g => <option key={g} value={g}>{GRADE_LABELS[g]}</option>)}
-                                            </select>
-                                        ) : (
-                                            <select value={assignGrade} onChange={(e) => setAssignGrade(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white outline-none">
-                                                {myGrades.map(g => (
-                                                    <option key={g} value={g}>{GRADE_LABELS[g] || g}</option>
-                                                ))}
-                                            </select>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 block mb-1">จำนวนข้อที่ต้องการ</label>
-                                        <input type="number" value={assignCount} onChange={(e) => setAssignCount(Number(e.target.value))} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white" min="5" max="50" />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 block mb-1">ส่งภายใน</label>
-                                        <input type="date" value={assignDeadline} onChange={(e) => setAssignDeadline(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 bg-white" />
-                                    </div>
-                                </div>
-                                <div className="pt-4 flex justify-end">
-                                    <button 
-                                        onClick={() => {
-                                            if (!assignSubject || !assignDeadline) return alert("กรุณากรอกข้อมูลให้ครบถ้วน");
-                                            setAssignStep(2);
-                                        }}
-                                        className="bg-orange-500 text-white px-6 py-2 rounded-xl font-bold hover:bg-orange-600 shadow-sm flex items-center gap-2"
-                                    >
-                                        ถัดไป: สร้างข้อสอบด้วย AI <ArrowRight size={18}/>
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 2: AI Generation */}
-                        {assignStep === 2 && (
-                            <div className="animate-fade-in space-y-4">
-                                <div className="bg-orange-100 p-4 rounded-xl border border-orange-200 text-orange-900 text-sm mb-4 flex justify-between items-center">
-                                    <span>สร้างข้อสอบสำหรับ: <b>{assignSubject}</b> ({assignCount} ข้อ)</span>
-                                    <button onClick={() => setAssignStep(1)} className="text-orange-700 underline text-xs">แก้ไขข้อมูล</button>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-1">Google Gemini API Key</label>
-                                    <div className="flex gap-2">
-                                        <input type="password" value={geminiApiKey} onChange={(e) => { setGeminiApiKey(e.target.value); localStorage.setItem('gemini_api_key', e.target.value); }} className="flex-1 p-2 border rounded-lg text-sm bg-white" placeholder="วาง API Key ที่นี่..." />
-                                        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-100 rounded-lg text-gray-600 hover:bg-gray-200"><Key size={18}/></a>
-                                    </div>
-                                </div>
-
-                                <div className="p-4 bg-white border rounded-xl shadow-sm">
-                                    <label className="block text-sm font-bold text-gray-700 mb-2">หัวข้อเรื่องที่ต้องการ (Topic)</label>
-                                    <div className="flex gap-2 mb-2">
-                                        <input 
-                                            type="text" 
-                                            value={assignAiTopic} 
-                                            onChange={(e) => setAssignAiTopic(e.target.value)} 
-                                            placeholder="ระบุเรื่องที่ต้องการให้ AI สร้างโจทย์ เช่น การบวกเลข, คำราชาศัพท์"
-                                            className="flex-1 p-3 border rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-purple-200 outline-none"
-                                        />
-                                        <button 
-                                            onClick={handleAssignGenerateQuestions}
-                                            disabled={isGeneratingAi || !assignAiTopic}
-                                            className="bg-purple-600 text-white px-4 rounded-xl font-bold shadow-sm hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
-                                        >
-                                            {isGeneratingAi ? <RefreshCw className="animate-spin" size={18}/> : <BrainCircuit size={18}/>}
-                                            สร้าง +5 ข้อ
-                                        </button>
-                                    </div>
-                                    <p className="text-xs text-gray-400">ระบบจะสร้างข้อสอบทีละ 5 ข้อ จนกว่าจะครบตามจำนวนที่ต้องการ</p>
-                                </div>
-
-                                {/* Generated List */}
-                                <div className="border rounded-xl overflow-hidden bg-white">
-                                    <div className="bg-gray-100 p-3 flex justify-between items-center">
-                                        <span className="font-bold text-gray-700 text-sm">รายการข้อสอบ ({newlyGeneratedQuestions.length}/{assignCount})</span>
-                                        {newlyGeneratedQuestions.length > 0 && <button onClick={() => setNewlyGeneratedQuestions([])} className="text-xs text-red-500 hover:underline">ล้างทั้งหมด</button>}
-                                    </div>
-                                    <div className="max-h-60 overflow-y-auto p-2 space-y-2">
-                                        {newlyGeneratedQuestions.length === 0 ? (
-                                            <div className="text-center py-8 text-gray-400 text-sm">ยังไม่มีข้อสอบ กด "สร้าง" เพื่อเริ่ม</div>
-                                        ) : (
-                                            newlyGeneratedQuestions.map((q, i) => (
-                                                <div key={i} className="p-3 border rounded-lg bg-gray-50 text-sm relative group">
-                                                    <div className="font-bold text-gray-800 pr-6">{i+1}. {q.text}</div>
-                                                    <div className="text-gray-500 text-xs mt-1">ตอบ: {q.correct} | {q.explanation}</div>
-                                                    <button 
-                                                        onClick={() => setNewlyGeneratedQuestions(prev => prev.filter((_, idx) => idx !== i))}
-                                                        className="absolute top-2 right-2 text-red-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition"
-                                                    >
-                                                        <Trash2 size={16}/>
-                                                    </button>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-                                
-                                {newlyGeneratedQuestions.length < assignCount && (
-                                    <div className="text-center text-xs text-orange-600 font-bold">
-                                        ⚠️ ยังขาดอีก {assignCount - newlyGeneratedQuestions.length} ข้อ
-                                    </div>
-                                )}
-
-                                <div className="flex gap-3 pt-4 border-t">
-                                    <button onClick={() => setAssignStep(1)} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg">ย้อนกลับ</button>
-                                    <button 
-                                        onClick={handleFinalizeAssignment}
-                                        disabled={isProcessing || newlyGeneratedQuestions.length === 0}
-                                        className="flex-1 bg-green-500 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-green-600 disabled:opacity-50 disabled:bg-gray-300 flex justify-center items-center gap-2"
-                                    >
-                                        {isProcessing ? 'กำลังบันทึก...' : <><Save size={20}/> บันทึกการบ้าน</>}
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                    )}
-                 </div>
-
-                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold text-gray-800">รายการการบ้าน ({normalAssignments.length})</h3>
-                    <button onClick={loadData} className="text-sm bg-gray-100 px-3 py-1 rounded-lg hover:bg-gray-200 transition"><RefreshCw size={14}/> รีเฟรช</button>
-                 </div>
-                 
-                 {normalAssignments.length === 0 ? (
-                     <div className="text-center py-10 text-gray-400 border-2 border-dashed rounded-xl">ยังไม่มีการบ้าน</div>
-                 ) : (
-                     <div className="overflow-x-auto bg-white rounded-xl shadow-sm border border-gray-200">
-                         <table className="w-full text-sm text-left">
-                             <thead className="bg-orange-50 text-orange-900">
-                                 <tr><th className="p-3">หัวข้อการบ้าน</th><th className="p-3 text-center">วิชา (ชั้น)</th><th className="p-3 text-center">จำนวนข้อ</th><th className="p-3">ส่งภายใน</th><th className="p-3 text-center">ส่งแล้ว</th><th className="p-3 text-right">จัดการ</th></tr>
-                             </thead>
-                             <tbody>
-                                 {normalAssignments.slice().reverse().map((a) => {
-                                     const submittedCount = countSubmitted(a.id);
-                                     const isExpired = new Date(a.deadline) < new Date();
-                                     return (
-                                         <tr key={a.id} className="border-b hover:bg-gray-50 last:border-0 transition-colors">
-                                             <td className="p-3 font-bold text-gray-900">
-                                                 {a.title || a.subject} 
-                                             </td>
-                                             <td className="p-3 text-center text-gray-600">
-                                                 {a.subject}
-                                                 {a.grade && a.grade !== 'ALL' && <div className="text-[10px] text-gray-400">{GRADE_LABELS[a.grade] || a.grade}</div>}
-                                             </td>
-                                             <td className="p-3 text-center font-mono">{a.questionCount}</td>
-                                             <td className={`p-3 font-medium ${isExpired ? 'text-red-600' : 'text-gray-900'}`}>
-                                                 {formatDate(a.deadline)}
-                                             </td>
-                                             <td className="p-3 text-center">
-                                                 <span className={`px-2 py-1 rounded-full font-bold text-xs ${submittedCount > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
-                                                     {submittedCount}
-                                                 </span>
-                                             </td>
-                                             <td className="p-3 text-right flex justify-end gap-2">
-                                                 <button onClick={() => handleViewAssignment(a)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded"><Eye size={16} /></button>
-                                                 <button onClick={() => handleDeleteAssignment(a.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16}/></button>
-                                             </td>
-                                         </tr>
-                                     );
-                                 })}
-                             </tbody>
-                         </table>
-                     </div>
-                 )}
-              </div>
-            )}
-
             {/* QUESTIONS TAB */}
             {activeTab === 'questions' && (
                <div className="max-w-6xl mx-auto">
@@ -1642,16 +1198,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                   {/* Subject Filter Chips - Always Visible if Subjects exist */}
                   {availableSubjects.length > 0 && (
                       <div className="flex flex-wrap gap-2 mb-6">
-                         <button 
-                            onClick={() => { setQBankSubject(null); setQBankPage(1); }}
-                            className={`px-4 py-2 rounded-full border transition-all ${
-                                !qBankSubject 
-                                ? 'bg-gray-800 text-white border-gray-800 font-bold shadow-sm' 
-                                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                            }`}
-                        >
-                            ทั้งหมด
-                        </button>
+                         <div className="text-xs font-bold text-gray-500 mr-2 flex items-center">เลือกวิชาเพื่อดูข้อสอบ:</div>
                          {availableSubjects.map(sub => (
                             <button 
                                 key={sub.id}
@@ -1669,8 +1216,23 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                   )}
     
                   {/* Question List */}
-                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                        <div className="p-4 bg-gray-50 font-bold text-gray-700">รายการข้อสอบ ({filteredQuestions.length})</div>
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden min-h-[200px]">
+                        {!qBankSubject ? (
+                            <div className="flex flex-col items-center justify-center p-10 text-gray-400">
+                                <Book size={40} className="mb-2 opacity-20"/>
+                                <p>กรุณาเลือกวิชาด้านบนเพื่อโหลดข้อสอบ</p>
+                            </div>
+                        ) : loadingQuestions ? (
+                             <div className="flex flex-col items-center justify-center p-10 text-blue-500">
+                                <Loader2 className="animate-spin mb-2" size={32}/>
+                                <p>กำลังโหลดข้อสอบ...</p>
+                            </div>
+                        ) : (
+                        <>
+                        <div className="p-4 bg-gray-50 font-bold text-gray-700 flex justify-between">
+                            <span>รายการข้อสอบ {qBankSubject} ({filteredQuestions.length})</span>
+                            <span className="text-xs font-normal text-gray-500">แสดงเฉพาะ: {showMyQuestionsOnly ? 'ของฉัน' : 'ทั้งหมด'}</span>
+                        </div>
                         <div className="divide-y divide-gray-100">
                             {currentQuestions.length > 0 ? currentQuestions.map((q, idx) => (
                                 <div key={q.id} className="p-5 hover:bg-blue-50 transition">
@@ -1699,6 +1261,8 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                 <span className="p-2 text-sm text-gray-500">หน้า {qBankPage}</span>
                                 <button disabled={qBankPage * ITEMS_PER_PAGE >= filteredQuestions.length} onClick={()=>setQBankPage(p=>p+1)} className="p-2 border rounded hover:bg-gray-100 disabled:opacity-50"><ChevronRight size={16}/></button>
                             </div>
+                        )}
+                        </>
                         )}
                   </div>
                </div>
@@ -2108,7 +1672,6 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       {/* ... [Modals: Assignments, Stats] ... */}
       {selectedAssignment && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-              {/* Existing Assignment Modal Implementation */}
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-fade-in overflow-hidden">
                   <div className="p-4 border-b flex justify-between items-center bg-gray-50">
                       <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2"><Calendar size={20} className="text-blue-600"/> รายละเอียดการส่งงาน</h3>

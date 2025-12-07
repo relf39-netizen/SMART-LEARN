@@ -12,7 +12,7 @@ import GameSetup from './views/GameSetup';
 import Results from './views/Results';
 import Stats from './views/Stats';
 import { Student, Question, Teacher, Subject, ExamResult, Assignment, SubjectConfig } from './types';
-import { saveScore, getDataForStudent } from './services/api'; // ✅ Remove fetchAppData from here
+import { saveScore, getDataForStudent, getQuestionsBySubject } from './services/api'; 
 import { Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -33,17 +33,15 @@ const App: React.FC = () => {
   const [examResults, setExamResults] = useState<ExamResult[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [subjects, setSubjects] = useState<SubjectConfig[]>([]); 
-  const [isLoading, setIsLoading] = useState(false); // ✅ Default to false (no initial load)
+  const [isLoading, setIsLoading] = useState(false); 
 
   const handleLogin = async (student: Student) => { 
-    // ✅ Start loading after login
     setIsLoading(true);
     setCurrentUser(student); 
     
     try {
-      // ✅ Fetch ONLY necessary data for this student
       const data = await getDataForStudent(student);
-      setQuestions(data.questions);
+      setQuestions([]); // Questions will be loaded on demand
       setExamResults(data.results);
       setAssignments(data.assignments);
       setSubjects(data.subjects);
@@ -66,7 +64,7 @@ const App: React.FC = () => {
       setCurrentAssignment(null);
       setGameRoomCode(''); 
       setSubjects([]);
-      setQuestions([]); // Clear data
+      setQuestions([]); 
       setAssignments([]);
   };
 
@@ -85,7 +83,7 @@ const App: React.FC = () => {
 
        const subjectToSave = currentAssignment ? currentAssignment.subject : (selectedSubject || 'รวมวิชา');
        
-       // บันทึกคะแนนลง Google Sheet
+       // บันทึกคะแนน
        await saveScore(
          currentUser.id, 
          currentUser.name, 
@@ -113,19 +111,40 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSelectSubject = (subject: Subject) => { 
-    setSelectedSubject(subject); 
-    setCurrentAssignment(null); 
-    setCurrentPage('practice'); 
+  // ✅ Optimized: Fetch questions on demand
+  const handleSelectSubject = async (subject: Subject) => { 
+    setIsLoading(true);
+    try {
+        const fetchedQuestions = await getQuestionsBySubject(subject);
+        setQuestions(fetchedQuestions);
+        setSelectedSubject(subject); 
+        setCurrentAssignment(null); 
+        setCurrentPage('practice'); 
+    } catch(e) {
+        console.error(e);
+        alert('เกิดข้อผิดพลาดในการโหลดข้อสอบ');
+    } finally {
+        setIsLoading(false);
+    }
   };
   
-  const handleStartAssignment = (assignment: Assignment) => { 
-    setCurrentAssignment(assignment); 
-    setSelectedSubject(assignment.subject); 
-    setCurrentPage('practice'); 
+  // ✅ Optimized: Fetch questions on demand
+  const handleStartAssignment = async (assignment: Assignment) => { 
+    setIsLoading(true);
+    try {
+        const fetchedQuestions = await getQuestionsBySubject(assignment.subject);
+        setQuestions(fetchedQuestions);
+        setCurrentAssignment(assignment); 
+        setSelectedSubject(assignment.subject); 
+        setCurrentPage('practice');
+    } catch (e) {
+        console.error(e);
+        alert('เกิดข้อผิดพลาดในการโหลดข้อสอบ');
+    } finally {
+        setIsLoading(false);
+    }
   };
 
-  // ✅ เมื่อครูสร้างห้องเสร็จ
   const handleGameCreated = (roomCode: string) => {
       setGameRoomCode(roomCode);
       setCurrentPage('teacher-game');
@@ -139,14 +158,12 @@ const App: React.FC = () => {
   );
 
   if (currentPage === 'teacher-login') return <TeacherLogin onLoginSuccess={handleTeacherLoginSuccess} onBack={() => setCurrentPage('login')} />;
-  if (currentPage === 'teacher-dashboard' && currentTeacher) return <TeacherDashboard teacher={currentTeacher} onLogout={handleLogout} onStartGame={() => setCurrentPage('game-setup')} />;
+  if (currentPage === 'teacher-dashboard' && currentTeacher) return <TeacherDashboard teacher={currentTeacher} onLogout={handleLogout} onStartGame={() => setCurrentPage('game-setup')} onAdminLoginAsStudent={handleLogin} />;
   
-  // ✅ ส่ง handleGameCreated ไปให้ GameSetup
   if (currentPage === 'game-setup' && currentTeacher) return <GameSetup teacher={currentTeacher} onBack={() => setCurrentPage('teacher-dashboard')} onGameCreated={handleGameCreated} />;
   
   if (currentPage === 'teacher-game' && currentTeacher) {
       const teacherAsStudent: Student = { id: '99999', name: currentTeacher.name, school: currentTeacher.school, avatar: '👨‍🏫', stars: 0, grade: 'TEACHER' };
-      // ✅ ส่ง initialRoomCode ให้ครูเข้าห้องตัวเองได้เลย
       return <GameMode student={teacherAsStudent} initialRoomCode={gameRoomCode} onExit={() => setCurrentPage('teacher-dashboard')} />;
   }
   
@@ -165,29 +182,22 @@ const App: React.FC = () => {
               onNavigate={setCurrentPage} 
               onStartAssignment={handleStartAssignment}
               onSelectSubject={handleSelectSubject}
-              onRefreshSubjects={() => handleLogin(currentUser!)} // Allow refresh
+              onRefreshSubjects={() => handleLogin(currentUser!)} 
             />;
           case 'select-subject': return <SubjectSelection onSelectSubject={handleSelectSubject} onBack={() => setCurrentPage('dashboard')} />;
           case 'practice':
             let qList = questions;
             if (currentUser) {
-                // ✅ FILTER: เฉพาะข้อสอบของโรงเรียนตัวเอง หรือ ส่วนกลาง (CENTER/Admin)
+                // ✅ Filter loaded questions locally for practice mode
                 qList = questions.filter(q => 
                     (q.grade === currentUser.grade || q.grade === 'ALL') &&
                     (q.school === currentUser.school || q.school === 'CENTER' || q.school === 'Admin')
                 );
             }
-            const activeSubject = currentAssignment ? currentAssignment.subject : selectedSubject;
-            
-            if (activeSubject) {
-                qList = qList.filter(q => q.subject === activeSubject);
-            }
-
-            // ✅ LOGIC CHANGE: ถ้าเป็นการบ้าน ให้เอาข้อสอบล่าสุด (เพราะเพิ่งถูก Generate มา)
+            // Assignment already sets `questions` correctly in `handleStartAssignment`, but filtering doesn't hurt
             if (currentAssignment) {
-                qList = [...qList].reverse().slice(0, currentAssignment.questionCount);
+                 qList = qList.slice(0, currentAssignment.questionCount); // Take only needed amount if more loaded
             }
-
             return <PracticeMode questions={qList} onFinish={(s, t) => handleFinishExam(s, t, 'practice')} onBack={() => setCurrentPage('dashboard')} />;
           
           case 'game': 
@@ -204,7 +214,7 @@ const App: React.FC = () => {
             return <Stats 
               examResults={examResults} 
               studentId={currentUser!.id} 
-              subjects={subjects} // ✅ Pass subjects to Stats
+              subjects={subjects} 
               onBack={() => setCurrentPage('dashboard')} 
             />;
           default: return <Dashboard student={currentUser!} onNavigate={setCurrentPage} subjects={subjects} onSelectSubject={handleSelectSubject} />;

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Question, Teacher, SubjectConfig } from '../types';
 import { ArrowLeft, Play, Layers, Shuffle, GraduationCap } from 'lucide-react';
 import { db } from '../services/firebaseConfig';
-import { fetchAppData, getSubjects } from '../services/api';
+import { getSubjects, getQuestionsBySubject } from '../services/api';
 
 interface GameSetupProps {
   teacher: Teacher; 
@@ -12,7 +12,6 @@ interface GameSetupProps {
 }
 
 const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated }) => {
-  const [allQuestions, setAllQuestions] = useState<Question[]>([]);
   const [availableSubjects, setAvailableSubjects] = useState<SubjectConfig[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -32,12 +31,9 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
 
   useEffect(() => {
     const loadData = async () => {
-      const data = await fetchAppData();
-      setAllQuestions(data.questions);
-      
+      // 🟢 Optimized: Load subjects ONLY. Do NOT load all questions.
       const subs = await getSubjects(teacher.school);
       setAvailableSubjects(subs);
-      
       setLoading(false);
     };
     loadData();
@@ -50,26 +46,37 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
   const handleCreateGame = async () => {
     setLoading(true);
 
-    let filtered = allQuestions.filter(q => 
+    let finalQuestions: Question[] = [];
+
+    // 🟢 Optimized: Fetch questions on demand based on selection
+    if (selectedSubject === 'MIXED') {
+        // Warning: MIXED still requires fetching a lot if we want true random.
+        // Strategy: Fetch a few from each available subject.
+        for (const sub of availableSubjects) {
+            const qs = await getQuestionsBySubject(sub.name);
+            finalQuestions.push(...qs);
+        }
+    } else {
+        finalQuestions = await getQuestionsBySubject(selectedSubject);
+    }
+
+    // Filter by grade and school after fetching specific subjects
+    let filtered = finalQuestions.filter(q => 
         (q.grade === selectedGrade || q.grade === 'ALL') &&
         (q.school === teacher.school || q.school === 'CENTER' || q.school === 'Admin')
     );
 
-    if (selectedSubject !== 'MIXED') {
-        filtered = filtered.filter(q => q.subject === selectedSubject);
-    }
-
     filtered.sort(() => 0.5 - Math.random());
-    const finalQuestions = filtered.slice(0, questionCount);
+    const selectedQuestions = filtered.slice(0, questionCount);
 
-    if (finalQuestions.length === 0) {
+    if (selectedQuestions.length === 0) {
         alert(`ไม่พบข้อสอบสำหรับชั้น ${GRADE_LABELS[selectedGrade]} ในหมวดนี้`);
         setLoading(false);
         return;
     }
 
     // ✅ Strict Sanitization to prevent Firebase "undefined" error
-    const sanitizedQuestions = finalQuestions.map((q, idx) => ({
+    const sanitizedQuestions = selectedQuestions.map((q, idx) => ({
         id: String(q.id || `q${idx}`),
         subject: q.subject ? String(q.subject) : 'GENERAL',
         text: q.text ? String(q.text) : '',
@@ -77,7 +84,7 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
         choices: (Array.isArray(q.choices) ? q.choices : []).map((c, cIdx) => ({
             id: c.id ? String(c.id).trim() : `c${cIdx}`,
             text: c.text ? String(c.text) : '',
-            image: c.image ? String(c.image) : '' // Force empty string if undefined/null
+            image: c.image ? String(c.image) : '' 
         })),
         correctChoiceId: q.correctChoiceId ? String(q.correctChoiceId).trim() : '',
         explanation: q.explanation ? String(q.explanation) : '',
@@ -195,7 +202,7 @@ const GameSetup: React.FC<GameSetupProps> = ({ teacher, onBack, onGameCreated })
 
         <button 
             onClick={handleCreateGame}
-            disabled={loading || allQuestions.length === 0}
+            disabled={loading}
             className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-4 rounded-2xl font-bold text-xl shadow-lg hover:scale-[1.02] transition flex items-center justify-center gap-2"
         >
             {loading ? 'กำลังสร้างห้อง...' : <><Play fill="currentColor" /> เปิดห้องแข่งขัน</>}
