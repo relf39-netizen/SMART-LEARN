@@ -344,7 +344,18 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       let totalScorePercent = 0; 
       let count = 0;
       
+      // ✅ 1. Identify ALL Subjects for this grade (from Available Subjects + Results)
+      const distinctSubjects = new Set<string>();
+      // Add from available subjects for this grade
+      availableSubjects.forEach(s => {
+          if (s.grade === 'ALL' || s.grade === grade) distinctSubjects.add(s.name);
+      });
+      // Add from actual results (legacy coverage)
+      gradeResults.forEach(r => distinctSubjects.add(r.subject));
+
       const subjectMap: Record<string, { sumPct: number, count: number }> = {};
+      // Initialize map for all distinct subjects
+      distinctSubjects.forEach(sub => { subjectMap[sub] = { sumPct: 0, count: 0 }; });
 
       gradeResults.forEach(r => {
           const totalQ = Number(r.totalQuestions); 
@@ -354,9 +365,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
               totalScorePercent += pct; 
               count++; 
               
-              if(!subjectMap[r.subject]) subjectMap[r.subject] = { sumPct: 0, count: 0 };
-              subjectMap[r.subject].sumPct += pct;
-              subjectMap[r.subject].count++;
+              if(subjectMap[r.subject]) {
+                  subjectMap[r.subject].sumPct += pct;
+                  subjectMap[r.subject].count++;
+              }
           }
       });
       
@@ -364,8 +376,14 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
       
       const subjectStats = Object.keys(subjectMap).map(sub => ({
           name: sub,
-          avg: Math.round(subjectMap[sub].sumPct / subjectMap[sub].count)
-      })).sort((a,b) => b.avg - a.avg);
+          avg: subjectMap[sub].count > 0 ? Math.round(subjectMap[sub].sumPct / subjectMap[sub].count) : 0,
+          hasData: subjectMap[sub].count > 0
+      })).sort((a,b) => {
+          // Sort logic: Data first, then score
+          if (a.hasData && !b.hasData) return -1;
+          if (!a.hasData && b.hasData) return 1;
+          return b.avg - a.avg;
+      });
 
       return { studentCount: gradeStudents.length, avgScore: avg, activityCount: count, subjectStats };
   };
@@ -548,8 +566,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                             {students
                                 .filter(s => !selectedAssignment.grade || selectedAssignment.grade === 'ALL' || s.grade === selectedAssignment.grade)
                                 .map(s => {
-                                    // Find result for this student and assignment
-                                    const result = stats.find(r => String(r.studentId) === String(s.id) && r.assignmentId === selectedAssignment.id);
+                                    // ✅ Fix: Get the latest score for this assignment (handle multiple attempts)
+                                    const results = stats.filter(r => String(r.studentId) === String(s.id) && r.assignmentId === selectedAssignment.id);
+                                    const result = results.length > 0 ? results[results.length - 1] : undefined;
+                                    
                                     return (
                                         <tr key={s.id} className="hover:bg-gray-50">
                                             <td className="p-4 flex items-center gap-3">
@@ -1516,6 +1536,55 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                     {viewLevel === 'GRADES' && (
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 animate-fade-in mb-8">
                              {GRADES.map(g => {
+                                 // Update getGradeStats logic to include ALL subjects
+                                 const getGradeStats = (grade: string) => {
+                                      const gradeStudents = students.filter(s => s.grade === grade);
+                                      const studentIds = gradeStudents.map(s => s.id);
+                                      const gradeResults = stats.filter(r => studentIds.includes(String(r.studentId)));
+                                      
+                                      let totalScorePercent = 0; 
+                                      let count = 0;
+                                      
+                                      // 1. Identify ALL Subjects for this grade (from Available Subjects + Results)
+                                      const distinctSubjects = new Set<string>();
+                                      availableSubjects.forEach(s => {
+                                          if (s.grade === 'ALL' || s.grade === grade) distinctSubjects.add(s.name);
+                                      });
+                                      gradeResults.forEach(r => distinctSubjects.add(r.subject));
+
+                                      const subjectMap: Record<string, { sumPct: number, count: number }> = {};
+                                      distinctSubjects.forEach(sub => { subjectMap[sub] = { sumPct: 0, count: 0 }; });
+
+                                      gradeResults.forEach(r => {
+                                          const totalQ = Number(r.totalQuestions); 
+                                          const score = Number(r.score) || 0;
+                                          if (totalQ > 0) { 
+                                              const pct = (score / totalQ) * 100;
+                                              totalScorePercent += pct; 
+                                              count++; 
+                                              
+                                              if(subjectMap[r.subject]) {
+                                                  subjectMap[r.subject].sumPct += pct;
+                                                  subjectMap[r.subject].count++;
+                                              }
+                                          }
+                                      });
+                                      
+                                      const avg = count > 0 ? Math.round(totalScorePercent / count) : 0;
+                                      
+                                      const subjectStats = Object.keys(subjectMap).map(sub => ({
+                                          name: sub,
+                                          avg: subjectMap[sub].count > 0 ? Math.round(subjectMap[sub].sumPct / subjectMap[sub].count) : 0,
+                                          hasData: subjectMap[sub].count > 0
+                                      })).sort((a,b) => {
+                                          if (a.hasData && !b.hasData) return -1;
+                                          if (!a.hasData && b.hasData) return 1;
+                                          return b.avg - a.avg;
+                                      });
+
+                                      return { studentCount: gradeStudents.length, avgScore: avg, activityCount: count, subjectStats };
+                                  };
+
                                  const gStats = getGradeStats(g);
                                  return (
                                     <button key={g} onClick={() => { setSelectedGradeFilter(g); setViewLevel('LIST'); }} className="bg-white hover:bg-orange-50 p-6 rounded-2xl border border-gray-100 shadow-sm transition-all hover:border-orange-200 text-left group">
@@ -1526,25 +1595,32 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout, 
                                         <div className="text-2xl font-black text-gray-800 mb-1">{gStats.avgScore}%</div>
                                         <div className="text-sm text-gray-500">คะแนนเฉลี่ยรวม</div>
 
-                                        {/* Detailed Subject Breakdown with Progress Bars */}
+                                        {/* Detailed Subject Breakdown with Visual Progress Bars */}
                                         {gStats.subjectStats.length > 0 && (
                                             <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
                                                 {gStats.subjectStats.map((s, idx) => {
                                                     // Color Logic
-                                                    let barColor = 'bg-red-500';
-                                                    let textColor = 'text-red-600';
-                                                    if (s.avg >= 80) { barColor = 'bg-green-500'; textColor = 'text-green-600'; }
-                                                    else if (s.avg >= 70) { barColor = 'bg-blue-500'; textColor = 'text-blue-600'; }
-                                                    else if (s.avg >= 50) { barColor = 'bg-yellow-500'; textColor = 'text-yellow-600'; }
+                                                    let barColor = 'bg-gray-200';
+                                                    let textColor = 'text-gray-400';
+                                                    let width = s.avg;
+                                                    
+                                                    if (s.hasData) {
+                                                        if (s.avg >= 80) { barColor = 'bg-green-500'; textColor = 'text-green-600'; }
+                                                        else if (s.avg >= 70) { barColor = 'bg-blue-500'; textColor = 'text-blue-600'; }
+                                                        else if (s.avg >= 50) { barColor = 'bg-yellow-500'; textColor = 'text-yellow-600'; }
+                                                        else { barColor = 'bg-red-500'; textColor = 'text-red-600'; }
+                                                    } else {
+                                                        width = 5; // Minimal visual
+                                                    }
 
                                                     return (
                                                         <div key={idx} className="w-full">
                                                             <div className="flex justify-between items-center text-xs mb-1">
-                                                                <span className="text-gray-600 font-medium truncate pr-2">{s.name}</span>
-                                                                <span className={`font-bold ${textColor}`}>{s.avg}%</span>
+                                                                <span className={`font-medium truncate pr-2 ${s.hasData ? 'text-gray-700' : 'text-gray-400'}`}>{s.name}</span>
+                                                                <span className={`font-bold ${textColor}`}>{s.hasData ? `${s.avg}%` : 'N/A'}</span>
                                                             </div>
                                                             <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden shadow-inner">
-                                                                <div className={`h-full rounded-full ${barColor}`} style={{ width: `${s.avg}%` }}></div>
+                                                                <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${s.hasData ? width : 0}%` }}></div>
                                                             </div>
                                                         </div>
                                                     );
