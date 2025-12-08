@@ -1,5 +1,8 @@
+
+
+
 import React, { useState } from 'react';
-import { BookOpen, Gamepad2, BarChart3, Star, Calendar, CheckCircle, History, ArrowLeft, Users, Calculator, FlaskConical, Languages, Sparkles, RefreshCw } from 'lucide-react';
+import { BookOpen, Gamepad2, BarChart3, Star, Calendar, CheckCircle, History, ArrowLeft, Users, Calculator, FlaskConical, Languages, Sparkles, RefreshCw, Trophy, Sword, Crown, Gift, Backpack } from 'lucide-react';
 import { Student, Assignment, ExamResult, SubjectConfig } from '../types';
 
 interface DashboardProps {
@@ -37,7 +40,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onSelectSubject,
   onRefreshSubjects
 }) => {
-  const [view, setView] = useState<'main' | 'history'>('main');
+  const [view, setView] = useState<'main' | 'history' | 'onet' | 'inventory'>('main');
 
   const GRADE_LABELS: Record<string, string> = { 'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6', 'ALL': 'ทุกชั้น' };
 
@@ -50,12 +53,24 @@ const Dashboard: React.FC<DashboardProps> = ({
       return true;
   });
   
-  const finishedAssignments = myAssignments.filter(a => examResults.some(r => r.assignmentId === a.id));
-  const pendingAssignments = myAssignments.filter(a => !examResults.some(r => r.assignmentId === a.id));
+  // ✅ แยกประเภทการบ้าน (ทั่วไป vs O-NET)
+  const onetAssignments = myAssignments.filter(a => a.title && a.title.startsWith('[O-NET]'));
+  const generalAssignments = myAssignments.filter(a => !a.title || !a.title.startsWith('[O-NET]'));
+
+  // Logic สำหรับ General Assignments (แสดงในกล่องส้ม)
+  const pendingGeneral = generalAssignments.filter(a => !examResults.some(r => r.assignmentId === a.id));
+  const finishedGeneral = generalAssignments.filter(a => examResults.some(r => r.assignmentId === a.id));
+  
+  // Logic สำหรับ O-NET (แสดงในหน้า O-NET)
+  const finishedOnet = onetAssignments.filter(a => examResults.some(r => r.assignmentId === a.id));
+  const pendingOnet = onetAssignments.filter(a => !examResults.some(r => r.assignmentId === a.id));
 
   // เรียงลำดับ
-  pendingAssignments.sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
-  finishedAssignments.sort((a, b) => {
+  pendingGeneral.sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
+  
+  // รวมประวัติทั้งหมด
+  const allFinished = [...finishedGeneral, ...finishedOnet];
+  allFinished.sort((a, b) => {
       const resultA = examResults.find(r => r.assignmentId === a.id);
       const resultB = examResults.find(r => r.assignmentId === b.id);
       return (resultB?.timestamp || 0) - (resultA?.timestamp || 0);
@@ -96,7 +111,54 @@ const Dashboard: React.FC<DashboardProps> = ({
       return ENCOURAGING_MESSAGES[(Math.abs(hash) + index) % ENCOURAGING_MESSAGES.length];
   };
 
-  // --- ส่วนแสดงผลหน้าประวัติการส่งงาน ---
+  // --- View: Inventory ---
+  if (view === 'inventory') {
+      return (
+          <div className="space-y-6 pb-20 animate-fade-in">
+              <button onClick={() => setView('main')} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 mb-4">
+                  <ArrowLeft size={20} /> กลับหน้าแดชบอร์ด
+              </button>
+              
+              <div className="bg-gradient-to-r from-yellow-500 to-orange-500 p-6 rounded-3xl text-white shadow-lg relative overflow-hidden">
+                  <div className="relative z-10 flex items-center gap-4">
+                      <div className="bg-white/20 p-4 rounded-full backdrop-blur-sm">
+                          <Backpack size={40} className="text-white" />
+                      </div>
+                      <div>
+                          <h2 className="text-2xl font-bold">กระเป๋าของฉัน</h2>
+                          <p className="text-yellow-100">ของสะสมระดับตำนานที่คุณค้นพบ</p>
+                      </div>
+                  </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {(student.inventory && student.inventory.length > 0) ? student.inventory.map((item, index) => (
+                      <div key={index} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center text-center hover:-translate-y-1 transition-transform">
+                          <div className="text-5xl mb-3 drop-shadow-md">
+                            {item.includes('ดาบ') ? '⚔️' : 
+                             item.includes('โล่') ? '🛡️' : 
+                             item.includes('หมวก') ? '🧙‍♂️' : 
+                             item.includes('มงกุฎ') ? '👑' :
+                             item.includes('ตุ๊กตา') ? '🧸' :
+                             item.includes('เหรียญ') ? '🪙' :
+                             item.includes('รองเท้า') ? '👢' :
+                             item.includes('หนังสือ') ? '📘' :
+                             item.includes('โพชั่น') ? '🧪' : '🎁'}
+                          </div>
+                          <div className="font-bold text-gray-700 text-sm">{item}</div>
+                          <div className="text-[10px] text-gray-400 mt-1 bg-gray-50 px-2 py-0.5 rounded-full">Rare Item</div>
+                      </div>
+                  )) : (
+                      <div className="col-span-full py-20 text-center text-gray-400 border-2 border-dashed rounded-3xl">
+                          ยังไม่มีของสะสม เล่นเกมสะสมดาวเพื่อแลกของรางวัลนะ!
+                      </div>
+                  )}
+              </div>
+          </div>
+      );
+  }
+
+  // --- View: History ---
   if (view === 'history') {
     return (
       <div className="space-y-6 pb-20 animate-fade-in">
@@ -110,19 +172,20 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <div>
             <h2 className="text-2xl font-bold text-gray-800">ประวัติการส่งงาน</h2>
-            <p className="text-gray-500">รายการที่ทำเสร็จแล้ว ({finishedAssignments.length} รายการ)</p>
+            <p className="text-gray-500">รายการที่ทำเสร็จแล้ว ({allFinished.length} รายการ)</p>
           </div>
         </div>
 
         <div className="space-y-4">
-          {finishedAssignments.length > 0 ? (
-            finishedAssignments.map(hw => {
+          {allFinished.length > 0 ? (
+            allFinished.map(hw => {
               const result = examResults.find(r => r.assignmentId === hw.id);
+              const isOnet = hw.title?.startsWith('[O-NET]');
               return (
-                <div key={hw.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:shadow-md transition-shadow">
+                <div key={hw.id} className={`p-5 rounded-2xl shadow-sm border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:shadow-md transition-shadow ${isOnet ? 'bg-indigo-50 border-indigo-100' : 'bg-white border-gray-100'}`}>
                    <div>
                      <div className="flex items-center gap-2 mb-1">
-                        <span className="bg-blue-50 text-blue-600 text-xs font-bold px-2 py-1 rounded-lg">{hw.subject}</span>
+                        <span className={`text-xs font-bold px-2 py-1 rounded-lg ${isOnet ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-50 text-blue-600'}`}>{hw.subject}</span>
                         <span className="text-xs text-gray-400">{new Date(result?.timestamp || 0).toLocaleString('th-TH')}</span>
                      </div>
                      <div className="font-bold text-gray-800 text-lg">
@@ -155,33 +218,129 @@ const Dashboard: React.FC<DashboardProps> = ({
     );
   }
 
-  // --- ส่วนแสดงผลหน้าหลัก (Dashboard) ---
+  // --- View: O-NET ---
+  if (view === 'onet') {
+      return (
+        <div className="space-y-6 pb-20 animate-fade-in">
+            <button onClick={() => setView('main')} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 mb-4">
+                <ArrowLeft size={20} /> กลับหน้าแดชบอร์ด
+            </button>
+
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 rounded-3xl text-white shadow-lg relative overflow-hidden">
+                <div className="relative z-10 flex items-center gap-4">
+                    <div className="bg-white/20 p-4 rounded-2xl backdrop-blur-sm">
+                        <Trophy size={40} className="text-yellow-300 fill-yellow-300" />
+                    </div>
+                    <div>
+                        <h2 className="text-2xl font-bold">ภารกิจพิชิต O-NET</h2>
+                        <p className="text-indigo-100 text-sm">ฝึกฝนข้อสอบเสมือนจริง เตรียมความพร้อมสู่ความสำเร็จ</p>
+                    </div>
+                </div>
+                <div className="absolute right-0 top-0 opacity-10 transform translate-x-10 -translate-y-10">
+                    <Trophy size={200} />
+                </div>
+            </div>
+
+            <div className="space-y-4">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2"><BookOpen size={20} className="text-indigo-600"/> ข้อสอบที่แนะนำ</h3>
+                
+                {pendingOnet.length === 0 ? (
+                    <div className="text-center py-16 bg-white rounded-3xl border-2 border-dashed border-gray-200 text-gray-400">
+                        ยังไม่มีรายการติว O-NET ในตอนนี้
+                    </div>
+                ) : (
+                    pendingOnet.map(hw => (
+                        <div key={hw.id} className="bg-white border-l-4 border-indigo-500 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <div className="font-bold text-gray-800 text-lg mb-1">{hw.title}</div>
+                                <div className="flex gap-3 text-sm text-gray-500">
+                                    <span className="flex items-center gap-1"><BookOpen size={14}/> {hw.subject}</span>
+                                    <span className="flex items-center gap-1"><Calculator size={14}/> {hw.questionCount} ข้อ</span>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => onStartAssignment && onStartAssignment(hw)}
+                                className="w-full md:w-auto bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition active:scale-95"
+                            >
+                                เริ่มทำข้อสอบ
+                            </button>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+      );
+  }
+
+  // --- View: Main Dashboard ---
   return (
     <div className="space-y-8 pb-20">
-      {/* 1. Welcome Banner */}
+      {/* 1. Welcome Banner & Gamification Status */}
       <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-3xl p-6 text-white shadow-lg relative overflow-hidden">
         <div className="absolute top-0 right-0 opacity-10 transform translate-x-10 -translate-y-10"><Star size={150} /></div>
-        <div className="relative z-10 flex items-center gap-4">
-          <div className="text-5xl bg-white/20 p-3 rounded-full backdrop-blur-sm shadow-inner">{student.avatar}</div>
-          <div>
-            <h2 className="text-2xl font-bold mb-1">สวัสดี, {student.name.split(' ')[0]}!</h2>
-            <div className="flex gap-2 text-indigo-100 items-center text-sm">
-                <span>ยินดีต้อนรับสู่ LittleSchool LearnUp</span>
+        <div className="relative z-10">
+            <div className="flex items-center gap-4 mb-6">
+                <div className="text-5xl bg-white/20 p-3 rounded-full backdrop-blur-sm shadow-inner relative">
+                    {student.avatar}
+                    <div className="absolute -bottom-2 -right-2 bg-yellow-400 text-yellow-900 text-xs font-black px-2 py-1 rounded-full border-2 border-white">
+                        Lv.{student.level || 1}
+                    </div>
+                </div>
+                <div>
+                    <h2 className="text-2xl font-bold mb-1">สวัสดี, {student.name.split(' ')[0]}!</h2>
+                    <div className="flex gap-2 text-indigo-100 items-center text-sm">
+                        <span>สู้ต่อไปนะ! อีกนิดเดียวก็จะเลเวลอัพแล้ว</span>
+                    </div>
+                </div>
             </div>
-            <div className="flex items-center gap-2 mt-2 bg-black/20 w-fit px-3 py-1 rounded-full"><Star className="text-yellow-300 fill-yellow-300" size={16} /><span className="font-bold">{student.stars} ดาว</span></div>
-          </div>
+
+            {/* Gamification Bar */}
+            <div className="bg-black/20 rounded-2xl p-4 flex justify-between items-center backdrop-blur-sm">
+                <div className="text-center border-r border-white/20 pr-4 flex-1">
+                    <div className="text-xs text-indigo-200 mb-1 font-bold uppercase">ดาวสะสม</div>
+                    <div className="flex items-center justify-center gap-1">
+                        <Star className="text-yellow-300 fill-yellow-300" size={20} />
+                        <span className="font-black text-xl">{student.tokens || 0}<span className="text-sm opacity-50">/5</span></span>
+                    </div>
+                </div>
+                <div className="text-center border-r border-white/20 px-4 flex-1">
+                    <div className="text-xs text-indigo-200 mb-1 font-bold uppercase">เล่นไปแล้ว</div>
+                    <div className="flex items-center justify-center gap-1">
+                        <Gamepad2 className="text-green-300" size={20} />
+                        <span className="font-black text-xl">{student.quizCount || 0}<span className="text-sm opacity-50"> ครั้ง</span></span>
+                    </div>
+                </div>
+                <div onClick={() => setView('inventory')} className="text-center pl-4 flex-1 cursor-pointer hover:bg-white/10 rounded-lg p-1 transition">
+                    <div className="text-xs text-indigo-200 mb-1 font-bold uppercase">กระเป๋าของฉัน</div>
+                    <div className="flex items-center justify-center gap-1">
+                        <Backpack className="text-orange-300" size={20} />
+                        <span className="font-black text-xl">{(student.inventory || []).length}</span>
+                    </div>
+                </div>
+            </div>
+            
+            {/* Progress to next reward */}
+            <div className="mt-3">
+                 <div className="flex justify-between text-[10px] text-indigo-200 mb-1">
+                     <span>Progress to Next Level</span>
+                     <span>{(student.tokens || 0) * 20}%</span>
+                 </div>
+                 <div className="w-full bg-black/30 h-2 rounded-full overflow-hidden">
+                     <div className="bg-yellow-400 h-full transition-all duration-500" style={{ width: `${(student.tokens || 0) * 20}%` }}></div>
+                 </div>
+            </div>
         </div>
       </div>
 
-      {/* 2. การบ้าน (Pending Assignments) */}
-      {pendingAssignments.length > 0 ? (
+      {/* 2. การบ้านทั่วไป (Pending General Assignments) */}
+      {pendingGeneral.length > 0 ? (
         <div className="bg-white border-l-4 border-orange-500 rounded-2xl p-6 shadow-md animate-fade-in">
             <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <div className="bg-orange-100 p-2 rounded-lg text-orange-600"><Calendar size={20} /></div>
-                ภารกิจที่ต้องทำ ({pendingAssignments.length})
+                ภารกิจที่ต้องทำ ({pendingGeneral.length})
             </h3>
             <div className="space-y-3">
-                {pendingAssignments.map(hw => {
+                {pendingGeneral.map(hw => {
                     const isExpired = new Date(hw.deadline) < new Date();
                     return (
                         <div key={hw.id} className={`p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center border gap-3 ${isExpired ? 'bg-red-50 border-red-100' : 'bg-orange-50 border-orange-100'}`}>
@@ -274,8 +433,17 @@ const Dashboard: React.FC<DashboardProps> = ({
         <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
             <Sparkles className="text-yellow-500" /> เมนูเพิ่มเติม
         </h3>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             
+            {/* 🟢 การ์ดใหม่: พิชิต O-NET */}
+            <button onClick={() => setView('onet')} className="group bg-white rounded-3xl p-4 shadow-sm hover:shadow-lg transition-all border-b-4 border-indigo-100 hover:border-indigo-500 hover:-translate-y-1 flex flex-col items-center justify-center gap-2 text-center h-32 relative overflow-hidden">
+                <div className="bg-indigo-100 p-3 rounded-full text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors relative z-10">
+                    <Trophy size={28} />
+                </div>
+                <span className="font-bold text-gray-700 text-sm relative z-10">พิชิต O-NET</span>
+                {pendingOnet.length > 0 && <span className="absolute top-2 right-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">{pendingOnet.length}</span>}
+            </button>
+
             {/* ปุ่มเกมแข่งขัน */}
             <button onClick={() => onNavigate('game')} className="group bg-white rounded-3xl p-4 shadow-sm hover:shadow-lg transition-all border-b-4 border-purple-100 hover:border-purple-500 hover:-translate-y-1 flex flex-col items-center justify-center gap-2 text-center h-32">
                 <div className="bg-purple-100 p-3 rounded-full text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors"><Gamepad2 size={28} /></div>

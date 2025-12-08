@@ -5,9 +5,15 @@ export interface Student {
   name: string;
   school?: string; 
   avatar: string; 
-  stars: number; 
+  stars: number; // คะแนนสะสมรวม (EXP)
   grade?: string; 
-  teacherId?: string; 
+  teacherId?: string;
+  
+  // ✅ Gamification Fields
+  quizCount?: number; // จำนวนครั้งที่เล่น
+  tokens?: number;    // ดาวพิเศษ (สำหรับแลกของรางวัล)
+  level?: number;     // ระดับ/ด่าน
+  inventory?: string[]; // รายการของรางวัลที่ได้
 }
 
 export interface Teacher {
@@ -25,6 +31,7 @@ export interface Teacher {
 export interface School {
   id: string;
   name: string;
+  status?: 'active' | 'inactive'; // ✅ New field for suspension status
 }
 
 // ✅ New Interface for School Statistics

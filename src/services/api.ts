@@ -1,5 +1,7 @@
 
 
+
+
 import { Student, Question, Teacher, Subject, ExamResult, Assignment, SubjectConfig, School, RegistrationRequest, SchoolStats } from '../types'; 
 import { db, firebase } from './firebaseConfig'; 
 
@@ -19,7 +21,29 @@ const snapshotToArray = <T>(snapshot: any): T[] => {
 const cleanString = (str?: string) => str ? String(str).trim() : '';
 
 // ---------------------------------------------------------------------------
-// 🟢 ANALYTICS & STATS TRACKING (NEW)
+// 🟢 UTILS & HELPERS
+// ---------------------------------------------------------------------------
+
+// ✅ Check if school is active
+export const checkSchoolStatus = async (schoolName: string): Promise<boolean> => {
+    if (!schoolName || schoolName === 'System') return true;
+    try {
+        const snapshot = await db.ref('schools').orderByChild('name').equalTo(schoolName).once('value');
+        if (!snapshot.exists()) return true; // Legacy/Manual schools default to active
+        
+        let isActive = true;
+        snapshot.forEach(child => {
+            const val = child.val();
+            if (val.status === 'inactive') isActive = false;
+        });
+        return isActive;
+    } catch (e) {
+        return true; 
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 🟢 ANALYTICS & STATS TRACKING
 // ---------------------------------------------------------------------------
 
 // Function to increment counters atomically (Performant)
@@ -96,19 +120,36 @@ export const getQuestionsBySubject = async (subject: string): Promise<Question[]
 // 🟢 STUDENT LOGIN & DATA
 // ---------------------------------------------------------------------------
 
-export const verifyStudentLogin = async (studentId: string): Promise<Student | null> => {
+export const verifyStudentLogin = async (studentId: string): Promise<{ student: Student | null, error?: string }> => {
     try {
         const snapshot = await db.ref(`students/${studentId}`).once('value');
         if (snapshot.exists()) {
             const data = snapshot.val();
+            
+            // ✅ Check School Status
+            if (data.school) {
+                const isActive = await checkSchoolStatus(data.school);
+                if (!isActive) return { student: null, error: 'โรงเรียนถูกระงับการใช้งาน กรุณาติดต่อครูผู้ดูแล' };
+            }
+
             // ✅ Track Login
             if (data.school) trackSchoolActivity(data.school, 'login');
-            return { ...data, id: studentId };
+            
+            // ✅ Initialize Gamification Fields if missing
+            const student: Student = { 
+                ...data, 
+                id: studentId,
+                quizCount: data.quizCount || 0,
+                tokens: data.tokens || 0,
+                level: data.level || 1,
+                inventory: data.inventory || []
+            };
+            return { student };
         }
-        return null;
+        return { student: null, error: 'ไม่พบข้อมูลรหัสนักเรียนนี้' };
     } catch (error) {
         console.error("Login verification failed:", error);
-        return null;
+        return { student: null, error: 'เกิดข้อผิดพลาดในการเชื่อมต่อ' };
     }
 };
 
@@ -161,7 +202,7 @@ export const getSchools = async (): Promise<School[]> => {
     teachers.forEach(t => {
         const sName = cleanString(t.school);
         if (sName && sName !== 'System' && !existingSchoolNames.has(sName)) {
-            schools.push({ id: `legacy_${sName}`, name: sName });
+            schools.push({ id: `legacy_${sName}`, name: sName, status: 'active' });
             existingSchoolNames.add(sName);
         }
     });
@@ -171,14 +212,20 @@ export const getSchools = async (): Promise<School[]> => {
   }
 };
 
-export const manageSchool = async (data: { action: 'add' | 'delete', name?: string, id?: string }): Promise<boolean> => {
+export const manageSchool = async (data: { action: 'add' | 'edit' | 'delete', name?: string, id?: string, status?: 'active' | 'inactive' }): Promise<boolean> => {
   try {
     if (data.action === 'add' && data.name) {
       const cleanName = cleanString(data.name);
       const existing = await db.ref('schools').orderByChild('name').equalTo(cleanName).once('value');
       if (existing.exists()) return false;
       const newRef = db.ref('schools').push();
-      await newRef.set({ id: newRef.key, name: cleanName });
+      await newRef.set({ id: newRef.key, name: cleanName, status: 'active' });
+      return true;
+    } else if (data.action === 'edit' && data.id) {
+      const updateData: any = {};
+      if (data.name) updateData.name = data.name;
+      if (data.status) updateData.status = data.status;
+      await db.ref(`schools/${data.id}`).update(updateData);
       return true;
     } else if (data.action === 'delete' && data.id) {
       if (!data.id.startsWith('legacy_')) await db.ref(`schools/${data.id}`).remove();
@@ -224,15 +271,25 @@ export const deleteSubject = async (school: string, subjectId: string): Promise<
 // 🟢 TEACHERS
 // ---------------------------------------------------------------------------
 
-export const teacherLogin = async (username: string, password: string): Promise<{success: boolean, teacher?: Teacher}> => {
+export const teacherLogin = async (username: string, password: string): Promise<{success: boolean, teacher?: Teacher, message?: string}> => {
   try {
     const snapshot = await db.ref('teachers').orderByChild('username').equalTo(username).once('value');
     if (snapshot.exists()) {
       const teachers = snapshotToArray<Teacher>(snapshot);
       const teacher = teachers[0];
       if (teacher && teacher.password === password) {
+          
+          // ✅ Check School Status
+          if(teacher.school && teacher.school !== 'System') {
+             const isSchoolActive = await checkSchoolStatus(teacher.school);
+             if(!isSchoolActive) {
+                 return { success: false, message: 'โรงเรียนถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ' };
+             }
+          }
+
           // ✅ Track Teacher Login
           if(teacher.school) trackSchoolActivity(teacher.school, 'login');
+          
           return { success: true, teacher };
       }
     } else {
@@ -242,8 +299,8 @@ export const teacherLogin = async (username: string, password: string): Promise<
              return { success: true, teacher: newAdmin };
         }
     }
-    return { success: false };
-  } catch (e) { return { success: false }; }
+    return { success: false, message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' };
+  } catch (e) { return { success: false, message: 'เกิดข้อผิดพลาดในการเชื่อมต่อ' }; }
 };
 
 export const getAllTeachers = async (): Promise<Teacher[]> => {
@@ -335,7 +392,20 @@ export const manageStudent = async (data: { action: 'add' | 'edit' | 'delete', i
     const cleanSchool = cleanString(data.school);
     if (data.action === 'add') {
          let newId = Math.floor(10000 + Math.random() * 90000).toString();
-         const newStudent: Student = { id: newId, name: data.name!, school: cleanSchool, avatar: data.avatar!, stars: 0, grade: data.grade, teacherId: data.teacherId };
+         const newStudent: Student = { 
+             id: newId, 
+             name: data.name!, 
+             school: cleanSchool, 
+             avatar: data.avatar!, 
+             stars: 0, 
+             grade: data.grade, 
+             teacherId: data.teacherId,
+             // Gamification Defaults
+             quizCount: 0,
+             tokens: 0,
+             level: 1,
+             inventory: [] 
+         };
          await db.ref(`students/${newId}`).set(newStudent);
          return { success: true, student: newStudent };
     } else if (data.action === 'edit' && data.id) {
@@ -417,11 +487,48 @@ export const deleteAssignment = async (id: string): Promise<boolean> => {
   try { await db.ref(`assignments/${id}`).remove(); return true; } catch (e) { return false; }
 };
 
-export const saveScore = async (studentId: string, studentName: string, school: string, score: number, total: number, subject: string, assignmentId?: string) => {
+// ✅ Updated to handle Gamification
+export const saveScore = async (
+    studentId: string, 
+    studentName: string, 
+    school: string, 
+    score: number, 
+    total: number, 
+    subject: string, 
+    assignmentId?: string,
+    updates?: Partial<Student> // Accepts gamification updates
+) => {
   try {
     const newRef = db.ref('results').push();
-    await newRef.set({ id: newRef.key, studentId, studentName, school: cleanString(school), score, totalQuestions: total, subject, assignmentId: assignmentId || '-', timestamp: firebase.database.ServerValue.TIMESTAMP });
-    db.ref(`students/${studentId}`).child('stars').transaction((currentStars) => (currentStars || 0) + score);
+    await newRef.set({ 
+        id: newRef.key, 
+        studentId, 
+        studentName, 
+        school: cleanString(school), 
+        score, 
+        totalQuestions: total, 
+        subject, 
+        assignmentId: assignmentId || '-', 
+        timestamp: firebase.database.ServerValue.TIMESTAMP 
+    });
+    
+    // Update student stats (Stars is Score Accumulation)
+    const studentRef = db.ref(`students/${studentId}`);
+    
+    // Create update object
+    const updatePayload: any = {
+        stars: firebase.database.ServerValue.increment(score)
+    };
+    
+    // Merge gamification updates if provided
+    if (updates) {
+        if (updates.quizCount !== undefined) updatePayload.quizCount = updates.quizCount;
+        if (updates.tokens !== undefined) updatePayload.tokens = updates.tokens;
+        if (updates.level !== undefined) updatePayload.level = updates.level;
+        if (updates.inventory !== undefined) updatePayload.inventory = updates.inventory;
+    }
+
+    await studentRef.update(updatePayload);
     
     // ✅ Track Activity (Activity Count)
     trackSchoolActivity(school, 'activity');

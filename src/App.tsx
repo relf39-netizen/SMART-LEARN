@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import Layout from './components/Layout';
 import Login from './views/Login';
@@ -24,7 +25,15 @@ const App: React.FC = () => {
   const [isMusicOn, setIsMusicOn] = useState(true);
   
   // State to hold result data
-  const [lastScore, setLastScore] = useState<{score: number, total: number, isHomework: boolean, isGame: boolean} | null>(null);
+  const [lastScore, setLastScore] = useState<{
+      score: number, 
+      total: number, 
+      isHomework: boolean, 
+      isGame: boolean,
+      earnedToken?: boolean,
+      unlockedReward?: string | null,
+      leveledUp?: boolean
+  } | null>(null);
   
   // ✅ New State for Game PIN
   const [gameRoomCode, setGameRoomCode] = useState<string>('');
@@ -34,6 +43,12 @@ const App: React.FC = () => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [subjects, setSubjects] = useState<SubjectConfig[]>([]); 
   const [isLoading, setIsLoading] = useState(false); 
+
+  // List of Possible Rewards
+  const REWARD_POOL = [
+      'ดาบอัศวิน', 'โล่ป้องกัน', 'หมวกพ่อมด', 'ตุ๊กตาหมี', 
+      'เหรียญทองคำ', 'มงกุฎราชา', 'รองเท้าสายฟ้า', 'หนังสือเวทมนตร์'
+  ];
 
   const handleLogin = async (student: Student) => { 
     setIsLoading(true);
@@ -69,35 +84,101 @@ const App: React.FC = () => {
   };
 
   const handleFinishExam = async (score: number, total: number, source: 'practice' | 'game' = 'practice') => {
+    if (!currentUser) return;
+    
     const isHomework = !!currentAssignment;
     const isGame = source === 'game';
-    setLastScore({ score, total, isHomework, isGame });
+    const subjectToSave = currentAssignment ? currentAssignment.subject : (selectedSubject || 'รวมวิชา');
+    
+    // --- GAMIFICATION LOGIC ---
+    let newQuizCount = (currentUser.quizCount || 0) + 1;
+    let newTokens = currentUser.tokens || 0;
+    let newLevel = currentUser.level || 1;
+    let newInventory = [...(currentUser.inventory || [])];
+    
+    let earnedToken = false;
+    let unlockedReward: string | null = null;
+    let leveledUp = false;
+
+    // 1. Every 5 quizzes -> Get 1 Token
+    if (newQuizCount % 5 === 0) {
+        newTokens += 1;
+        earnedToken = true;
+    }
+
+    // 2. 6th quiz onwards: If Full Score -> Get 1 Token
+    const isFullScore = score === total && total > 0;
+    if (newQuizCount > 5 && isFullScore) {
+        newTokens += 1;
+        earnedToken = true; // Could be double token if matches rule #1 too
+    }
+
+    // 3. Level Up Condition: Every 5 Tokens
+    if (newTokens >= 5) {
+        // Exchange 5 tokens for 1 level up? Or Accumulate?
+        // Prompt says: "Accumulate 5 stars -> Give reward".
+        // Let's deduce 5 tokens to buy level up/reward.
+        newTokens -= 5; 
+        newLevel += 1;
+        leveledUp = true;
+        
+        // Unlock Reward
+        const randomReward = REWARD_POOL[Math.floor(Math.random() * REWARD_POOL.length)];
+        // Add to inventory if not exists (or allow duplicates? let's allow duplicates for now or unique)
+        if (!newInventory.includes(randomReward)) {
+            newInventory.push(randomReward);
+            unlockedReward = randomReward;
+        } else {
+             // Fallback reward
+             unlockedReward = 'โพชั่นเพิ่มพลัง';
+             newInventory.push('โพชั่นเพิ่มพลัง');
+        }
+    }
+
+    setLastScore({ score, total, isHomework, isGame, earnedToken, unlockedReward, leveledUp });
     setCurrentPage('results');
     
-    if (currentUser) {
-       // ✅ ถ้าเป็นเกม: ไม่บันทึกลง Sheet และไม่รวมใน Stats (แต่เพิ่มดาวให้เพื่อความสนุก)
-       if (isGame) {
-           setCurrentUser(prev => prev ? { ...prev, stars: prev.stars + score } : null);
-           return; 
-       }
+    // Update Local State
+    const updatedStudent = { 
+        ...currentUser, 
+        stars: currentUser.stars + score, // Existing logic (score = XP)
+        quizCount: newQuizCount,
+        tokens: newTokens, // The remaining tokens after leveling up
+        level: newLevel,
+        inventory: newInventory
+    };
+    setCurrentUser(updatedStudent);
 
-       const subjectToSave = currentAssignment ? currentAssignment.subject : (selectedSubject || 'รวมวิชา');
-       
-       // บันทึกคะแนน
-       await saveScore(
+    if (isGame) {
+         // Game doesn't save results to permanent history usually, but we might want to update stats?
+         // For now, prompt says game gives stars too. Let's update stats but NOT examResult history to avoid clutter.
+         // Actually, let's just update the Student Stats in Firebase.
+         await saveScore(
+            currentUser.id, 
+            currentUser.name, 
+            currentUser.school || '-', 
+            score, // Adds to existing stars
+            total, 
+            'GAME_MODE', // Fake subject for game
+            undefined,
+            { quizCount: newQuizCount, tokens: newTokens, level: newLevel, inventory: newInventory }
+         );
+         return; 
+    }
+
+    // Normal Save
+    await saveScore(
          currentUser.id, 
          currentUser.name, 
          currentUser.school || '-', 
          score, 
          total, 
          subjectToSave, 
-         currentAssignment ? currentAssignment.id : undefined
-       );
+         currentAssignment ? currentAssignment.id : undefined,
+         { quizCount: newQuizCount, tokens: newTokens, level: newLevel, inventory: newInventory }
+    );
        
-       // อัปเดตดาว
-       setCurrentUser(prev => prev ? { ...prev, stars: prev.stars + score } : null);
-       
-       const newResult: ExamResult = { 
+    const newResult: ExamResult = { 
          id: Math.random().toString(), 
          studentId: currentUser.id, 
          subject: subjectToSave as Subject,
@@ -105,10 +186,9 @@ const App: React.FC = () => {
          totalQuestions: total, 
          timestamp: Date.now(), 
          assignmentId: currentAssignment?.id 
-       };
-       setExamResults(prev => [...prev, newResult]);
-       setCurrentAssignment(null);
-    }
+    };
+    setExamResults(prev => [...prev, newResult]);
+    setCurrentAssignment(null);
   };
 
   // ✅ Optimized: Fetch questions on demand
@@ -209,7 +289,18 @@ const App: React.FC = () => {
                 />
             );
           
-          case 'results': return <Results score={lastScore?.score || 0} total={lastScore?.total || 0} isHomework={lastScore?.isHomework} isGame={lastScore?.isGame} onRetry={() => setCurrentPage('dashboard')} onHome={() => setCurrentPage('dashboard')} />;
+          case 'results': 
+            return <Results 
+                score={lastScore?.score || 0} 
+                total={lastScore?.total || 0} 
+                isHomework={lastScore?.isHomework} 
+                isGame={lastScore?.isGame} 
+                earnedToken={lastScore?.earnedToken}
+                unlockedReward={lastScore?.unlockedReward}
+                leveledUp={lastScore?.leveledUp}
+                onRetry={() => setCurrentPage('dashboard')} 
+                onHome={() => setCurrentPage('dashboard')} 
+            />;
           case 'stats': 
             return <Stats 
               examResults={examResults} 

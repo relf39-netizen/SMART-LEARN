@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
 import { Teacher } from '../types';
-import { ArrowLeft, Lock, UserPlus, X, CreditCard, User } from 'lucide-react';
+import { ArrowLeft, Lock, UserPlus, X, CreditCard, User, AlertCircle } from 'lucide-react';
 import { teacherLogin, requestRegistration } from '../services/api';
 
 interface TeacherLoginProps {
@@ -31,7 +32,8 @@ const TeacherLogin: React.FC<TeacherLoginProps> = ({ onLoginSuccess, onBack }) =
       if (result.success && result.teacher) {
         onLoginSuccess(result.teacher);
       } else {
-        setError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+        // ✅ Show specific error message (e.g., School Suspended)
+        setError(result.message || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
         setPassword('');
       }
     } catch (err) {
@@ -143,7 +145,12 @@ const TeacherLogin: React.FC<TeacherLoginProps> = ({ onLoginSuccess, onBack }) =
             </div>
           </div>
 
-          {error && <p className="text-red-500 text-sm text-center bg-red-50 p-2 rounded-lg">{error}</p>}
+          {error && (
+             <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg border border-red-100">
+                <AlertCircle size={18} className="shrink-0" />
+                <span>{error}</span>
+             </div>
+          )}
 
           <button 
             type="submit" 

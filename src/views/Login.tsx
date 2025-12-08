@@ -1,23 +1,23 @@
 
+
 import React, { useState } from 'react';
 import { Student } from '../types';
 import { AlertCircle, GraduationCap, Loader2 } from 'lucide-react';
-import { verifyStudentLogin } from '../services/api'; // ✅ Import new API
+import { verifyStudentLogin } from '../services/api'; 
 
 interface LoginProps {
   onLogin: (student: Student) => void;
   onTeacherLoginClick: () => void;
-  // students prop removed!
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin, onTeacherLoginClick }) => {
   const [inputCode, setInputCode] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false); // ✅ Check status
+  const [loading, setLoading] = useState(false); 
   const [foundStudent, setFoundStudent] = useState<Student | null>(null);
 
   const handleNumberClick = (num: string) => {
-    if (loading) return; // Prevent input while checking
+    if (loading) return; 
     if (inputCode.length < 5) {
       const newCode = inputCode + num;
       setInputCode(newCode);
@@ -39,23 +39,23 @@ const Login: React.FC<LoginProps> = ({ onLogin, onTeacherLoginClick }) => {
   const checkStudent = async (code: string) => {
     setLoading(true);
     
-    // ✅ Call Server-side verify (No downloading all students)
-    const student = await verifyStudentLogin(code);
+    // ✅ Updated API Call to handle object return
+    const result = await verifyStudentLogin(code);
     
     setLoading(false);
 
-    if (student) {
-      setFoundStudent(student);
+    if (result.student) {
+      setFoundStudent(result.student);
       setTimeout(() => {
-        onLogin(student);
+        onLogin(result.student!);
       }, 1000);
     } else {
-      setError(`ไม่พบข้อมูลรหัส ${code}`);
+      setError(result.error || `ไม่พบข้อมูลรหัส ${code}`);
       setFoundStudent(null);
       setTimeout(() => {
         setInputCode('');
         setError('');
-      }, 2000);
+      }, 3000); // Increased timeout to read error
     }
   };
 
@@ -92,8 +92,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, onTeacherLoginClick }) => {
         </div>
 
         {error && (
-          <div className="flex items-center justify-center gap-2 text-red-500 mb-4 text-sm font-medium bg-red-50 p-2 rounded-lg animate-pulse">
-            <AlertCircle size={16} /> {error}
+          <div className="flex items-center justify-center gap-2 text-red-500 mb-4 text-sm font-medium bg-red-50 p-2 rounded-lg animate-pulse text-center">
+            <AlertCircle size={16} className="shrink-0" /> {error}
           </div>
         )}
 
